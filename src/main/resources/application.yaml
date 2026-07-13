@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: ws-seguros-complementario
+server:
+  port: 80
