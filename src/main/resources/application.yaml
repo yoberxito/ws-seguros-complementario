@@ -1,5 +1,9 @@
 spring:
   application:
     name: ws-seguros-complementario
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 server:
   port: 80
