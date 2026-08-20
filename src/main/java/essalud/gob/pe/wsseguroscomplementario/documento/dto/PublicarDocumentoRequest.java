@@ -4,7 +4,19 @@ public class PublicarDocumentoRequest {
 
     private String idDocumentoSellado;
     private String registroInternoProceso;
+
+    /*
+     * Tipo de documento lógico:
+     * FORMULARIO_6012 o AUTORIZACION_DESCUENTO.
+     */
     private String tipoDocumento;
+
+    /*
+     * Tipo de documento de identidad del trabajador:
+     * 01, 04, 07, etc.
+     */
+    private String tipoDocumentoTrabajador;
+
     private String numeroDocumentoTrabajador;
 
     private String canalPublicacion;
@@ -17,47 +29,76 @@ public class PublicarDocumentoRequest {
         return idDocumentoSellado;
     }
 
-    public void setIdDocumentoSellado(String idDocumentoSellado) {
-        this.idDocumentoSellado = idDocumentoSellado;
+    public void setIdDocumentoSellado(
+            String idDocumentoSellado
+    ) {
+        this.idDocumentoSellado =
+                idDocumentoSellado;
     }
 
     public String getRegistroInternoProceso() {
         return registroInternoProceso;
     }
 
-    public void setRegistroInternoProceso(String registroInternoProceso) {
-        this.registroInternoProceso = registroInternoProceso;
+    public void setRegistroInternoProceso(
+            String registroInternoProceso
+    ) {
+        this.registroInternoProceso =
+                registroInternoProceso;
     }
 
     public String getTipoDocumento() {
         return tipoDocumento;
     }
 
-    public void setTipoDocumento(String tipoDocumento) {
-        this.tipoDocumento = tipoDocumento;
+    public void setTipoDocumento(
+            String tipoDocumento
+    ) {
+        this.tipoDocumento =
+                tipoDocumento;
+    }
+
+    public String getTipoDocumentoTrabajador() {
+        return tipoDocumentoTrabajador;
+    }
+
+    public void setTipoDocumentoTrabajador(
+            String tipoDocumentoTrabajador
+    ) {
+        this.tipoDocumentoTrabajador =
+                tipoDocumentoTrabajador;
     }
 
     public String getNumeroDocumentoTrabajador() {
         return numeroDocumentoTrabajador;
     }
 
-    public void setNumeroDocumentoTrabajador(String numeroDocumentoTrabajador) {
-        this.numeroDocumentoTrabajador = numeroDocumentoTrabajador;
+    public void setNumeroDocumentoTrabajador(
+            String numeroDocumentoTrabajador
+    ) {
+        this.numeroDocumentoTrabajador =
+                numeroDocumentoTrabajador;
     }
 
     public String getCanalPublicacion() {
         return canalPublicacion;
     }
 
-    public void setCanalPublicacion(String canalPublicacion) {
-        this.canalPublicacion = canalPublicacion;
+    public void setCanalPublicacion(
+            String canalPublicacion
+    ) {
+        this.canalPublicacion =
+                canalPublicacion;
     }
 
     public String getPublicadoPor() {
         return publicadoPor;
     }
 
-    public void setPublicadoPor(String publicadoPor) {
-        this.publicadoPor = publicadoPor;
+    public void setPublicadoPor(
+            String publicadoPor
+    ) {
+        this.publicadoPor =
+                publicadoPor;
     }
 }

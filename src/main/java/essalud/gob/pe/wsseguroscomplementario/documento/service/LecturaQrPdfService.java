@@ -41,12 +41,46 @@ public class LecturaQrPdfService {
                 Optional<String> contenidoQr = decodificarQr(imagenPagina);
 
                 if (contenidoQr.isPresent()) {
-                    DatosQrDocumento datosQr = DatosQrDocumento.desdeContenidoQr(
-                            contenidoQr.get(),
-                            indicePagina + 1
-                    );
 
-                    qrsLeidos.add(datosQr);
+                    try {
+
+                        /*
+                         * ZXing puede detectar códigos QR que pertenecen
+                         * a otros sistemas o documentos.
+                         *
+                         * Que exista un QR legible no significa que sea
+                         * un QR documental generado por +Vida.
+                         *
+                         * Si su contenido no cumple nuestro formato
+                         * ID_DOCUMENTO / TIPO_DOCUMENTO /
+                         * PAGINA / TOTAL_PAGINAS, se ignora como QR
+                         * documental válido.
+                         *
+                         * Posteriormente la validación de correspondencia
+                         * rechazará funcionalmente el archivo al no
+                         * encontrar un QR +Vida válido.
+                         */
+                        DatosQrDocumento datosQr =
+                                DatosQrDocumento.desdeContenidoQr(
+                                        contenidoQr.get(),
+                                        indicePagina + 1
+                                );
+
+                        qrsLeidos.add(
+                                datosQr
+                        );
+
+                    } catch (IllegalArgumentException e) {
+
+                        /*
+                         * QR ajeno, incompleto o con formato distinto
+                         * al estándar documental +Vida.
+                         *
+                         * No es una falla técnica del sistema.
+                         * Por eso no propagamos la excepción como
+                         * ERROR_VALIDACION_CORRESPONDENCIA.
+                         */
+                    }
                 }
             }
 

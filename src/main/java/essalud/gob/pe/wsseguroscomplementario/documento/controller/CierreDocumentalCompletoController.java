@@ -49,9 +49,21 @@ public class CierreDocumentalCompletoController {
                             datosSesionDispositivo
                     );
 
+            /*
+             * Un cierre no completado por incidencia
+             * operativa es un resultado funcional del
+             * orquestador.
+             *
+             * Se conserva HTTP 200 para que el frontend
+             * pueda interpretar el body y distinguirlo
+             * de una caída real del backend.
+             */
             if (!response.isCierreCompletado()) {
-                return ResponseEntity.badRequest().body(
-                        ApiResponse.error(response.getMensajeCierre(), response)
+                return ResponseEntity.ok(
+                        ApiResponse.error(
+                                response.getMensajeCierre(),
+                                response
+                        )
                 );
             }
 

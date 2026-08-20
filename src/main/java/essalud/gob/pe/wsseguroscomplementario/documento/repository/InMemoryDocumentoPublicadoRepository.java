@@ -1,7 +1,6 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.repository;
 
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoPublicado;
-import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +8,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-@Repository
 public class InMemoryDocumentoPublicadoRepository implements DocumentoPublicadoRepository {
 
     private final ConcurrentHashMap<String, DocumentoPublicado> documentosPublicados = new ConcurrentHashMap<>();

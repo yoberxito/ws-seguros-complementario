@@ -15,7 +15,7 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Service;
-
+import java.util.Optional;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -43,36 +43,99 @@ public class GeneracionAutorizacionDescuentoService {
         this.registroDocumentoGeneradoService = registroDocumentoGeneradoService;
     }
 
-    public GenerarAutorizacionDescuentoResponse generarAutorizacionDescuento(
+    public synchronized GenerarAutorizacionDescuentoResponse generarAutorizacionDescuento(
             GenerarAutorizacionDescuentoRequest request
     ) {
         validarRequest(request);
 
-        String idDocumentoGenerado = generarIdDocumentoGenerado();
-        String nombreArchivo = construirNombreArchivo(request);
-        String contenidoQr = construirContenidoQr(idDocumentoGenerado);
+        Optional<RegistrarDocumentoGeneradoResponse> metadataExistente =
+                registroDocumentoGeneradoService
+                        .buscarMetadataPorProcesoYTipoDocumento(
+                                request.getRegistroInternoProceso(),
+                                TIPO_DOCUMENTO_AUTORIZACION
+                        );
 
-        byte[] pdfGenerado = generarPdfAutorizacionDesdePlantillaOficial(
-                request,
-                idDocumentoGenerado,
-                contenidoQr
-        );
+        if (metadataExistente.isPresent()) {
+            validarMetadataExistenteAutorizacion(
+                    metadataExistente.get()
+            );
+        }
 
-        RegistrarDocumentoGeneradoResponse metadataDocumentoGenerado =
-                registrarMetadataDocumentoGenerado(
-                        request,
-                        idDocumentoGenerado,
-                        nombreArchivo,
-                        pdfGenerado
+        String idDocumentoGenerado =
+                metadataExistente
+                        .map(
+                                RegistrarDocumentoGeneradoResponse::
+                                        getIdDocumentoGenerado
+                        )
+                        .orElseGet(
+                                this::generarIdDocumentoGenerado
+                        );
+
+        LocalDate fechaDocumento =
+                LocalDate.now();
+
+        if (
+                metadataExistente.isPresent()
+                        && metadataExistente
+                        .get()
+                        .getFechaHoraGeneracion()
+                        != null
+        ) {
+            fechaDocumento =
+                    metadataExistente
+                            .get()
+                            .getFechaHoraGeneracion()
+                            .toLocalDate();
+        }
+
+        String nombreArchivo =
+                construirNombreArchivo(request);
+
+        String contenidoQr =
+                construirContenidoQr(
+                        idDocumentoGenerado
                 );
 
-        GenerarAutorizacionDescuentoResponse response = new GenerarAutorizacionDescuentoResponse();
+        byte[] pdfGenerado =
+                generarPdfAutorizacionDesdePlantillaOficial(
+                        request,
+                        idDocumentoGenerado,
+                        contenidoQr,
+                        fechaDocumento
+                );
+
+        RegistrarDocumentoGeneradoResponse metadataDocumentoGenerado =
+                metadataExistente.orElseGet(
+                        () -> registrarMetadataDocumentoGenerado(
+                                request,
+                                idDocumentoGenerado,
+                                nombreArchivo,
+                                pdfGenerado
+                        )
+                );
+
+        GenerarAutorizacionDescuentoResponse response =
+                new GenerarAutorizacionDescuentoResponse();
+
         response.setGenerado(true);
-        response.setMensajeGeneracion("Autorización de Descuento generada correctamente.");
+
+        response.setMensajeGeneracion(
+                metadataExistente.isPresent()
+                        ? "Autorización de Descuento regenerada correctamente utilizando la metadata documental existente."
+                        : "Autorización de Descuento generada correctamente."
+        );
+
         response.setNombreArchivo(nombreArchivo);
         response.setContentType(CONTENT_TYPE_PDF);
-        response.setArchivoBase64(Base64.getEncoder().encodeToString(pdfGenerado));
-        response.setMetadataDocumentoGenerado(metadataDocumentoGenerado);
+
+        response.setArchivoBase64(
+                Base64.getEncoder()
+                        .encodeToString(pdfGenerado)
+        );
+
+        response.setMetadataDocumentoGenerado(
+                metadataDocumentoGenerado
+        );
 
         return response;
     }
@@ -80,7 +143,8 @@ public class GeneracionAutorizacionDescuentoService {
     private byte[] generarPdfAutorizacionDesdePlantillaOficial(
             GenerarAutorizacionDescuentoRequest request,
             String idDocumentoGenerado,
-            String contenidoQr
+            String contenidoQr,
+            LocalDate fechaDocumento
     ) {
         try (
                 PDDocument documento = cargarPlantillaOficial();
@@ -103,8 +167,6 @@ public class GeneracionAutorizacionDescuentoService {
                             true
                     )
             ) {
-                LocalDate fechaServidor = LocalDate.now();
-
                 /*
                  * Coordenadas ajustadas sobre la plantilla oficial.
                  * Sistema PDFBox: X crece hacia la derecha, Y crece hacia arriba.
@@ -158,7 +220,7 @@ public class GeneracionAutorizacionDescuentoService {
                         8.5f,
                         275,
                         551,
-                        String.valueOf(fechaServidor.getDayOfMonth())
+                        String.valueOf(fechaDocumento.getDayOfMonth())
                 );
 
                 escribirTexto(
@@ -167,18 +229,18 @@ public class GeneracionAutorizacionDescuentoService {
                         8.5f,
                         400,
                         551,
-                        obtenerNombreMes(fechaServidor)
+                        obtenerNombreMes(fechaDocumento)
                 );
 
 // QR de trazabilidad documental
-                contenido.drawImage(qrPdf, 462, 385, 75, 75);
+                contenido.drawImage(qrPdf, 432, 435, 75, 75);
 
                 escribirTexto(
                         contenido,
                         fuenteNormal,
                         5.5f,
-                        450,
-                        375,
+                        420,
+                        433,
                         "ID: " + abreviar(idDocumentoGenerado, 32)
                 );
 
@@ -187,7 +249,7 @@ public class GeneracionAutorizacionDescuentoService {
                         fuenteNormal,
                         5.5f,
                         450,
-                        367,
+                        424,
                         "Página 1 de 1"
                 );
             }
@@ -260,6 +322,42 @@ public class GeneracionAutorizacionDescuentoService {
 
     private String generarIdDocumentoGenerado() {
         return "DOC-GEN-" + UUID.randomUUID();
+    }
+
+    private void validarMetadataExistenteAutorizacion(
+            RegistrarDocumentoGeneradoResponse metadata
+    ) {
+        if (
+                metadata == null
+                        || campoVacio(
+                        metadata.getIdDocumentoGenerado()
+                )
+        ) {
+            throw new IllegalArgumentException(
+                    "La metadata existente de la Autorización de Descuento no contiene un identificador documental válido."
+            );
+        }
+
+        if (
+                !VERSION_FORMATO_AUTORIZACION.equalsIgnoreCase(
+                        metadata.getVersionFormato() == null
+                                ? ""
+                                : metadata.getVersionFormato()
+                )
+        ) {
+            throw new IllegalArgumentException(
+                    "La versión de la Autorización de Descuento no coincide con la metadata documental existente."
+            );
+        }
+
+        if (
+                metadata.getNumeroPaginasGeneradas()
+                        != 1
+        ) {
+            throw new IllegalArgumentException(
+                    "La metadata existente de la Autorización de Descuento no registra una página válida."
+            );
+        }
     }
 
     private void validarRequest(GenerarAutorizacionDescuentoRequest request) {

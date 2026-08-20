@@ -1,5 +1,5 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.service;
-
+import org.springframework.transaction.annotation.Transactional;
 import essalud.gob.pe.wsseguroscomplementario.common.util.ByteArrayMultipartFile;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoRequest;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoResponse;
@@ -9,7 +9,8 @@ import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoSellado;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.TipoDocumentoDigital;
 import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoPublicadoRepository;
 import org.springframework.stereotype.Service;
-
+import essalud.gob.pe.wsseguroscomplementario.documento.dto.SftpUploadResponse;
+import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoSustentoRepository;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -29,24 +30,47 @@ public class PublicacionDocumentoService {
     private static final ZoneId ZONA_HORARIA_LIMA = ZoneId.of("America/Lima");
 
     private final DocumentoPublicadoRepository documentoPublicadoRepository;
-    private final GeneracionDocumentoSelladoService generacionDocumentoSelladoService;
     private final ValidacionSelloEssaludService validacionSelloEssaludService;
+    private final SftpUploadService sftpUploadService;
+    private final DocumentoSustentoRepository documentoSustentoRepository;
+    private final PersistenciaResultadoSftpService
+            persistenciaResultadoSftpService;
 
     public PublicacionDocumentoService(
             DocumentoPublicadoRepository documentoPublicadoRepository,
-            GeneracionDocumentoSelladoService generacionDocumentoSelladoService,
-            ValidacionSelloEssaludService validacionSelloEssaludService
+            ValidacionSelloEssaludService validacionSelloEssaludService,
+            SftpUploadService sftpUploadService,
+            DocumentoSustentoRepository documentoSustentoRepository,
+            PersistenciaResultadoSftpService
+                    persistenciaResultadoSftpService
     ) {
-        this.documentoPublicadoRepository = documentoPublicadoRepository;
-        this.generacionDocumentoSelladoService = generacionDocumentoSelladoService;
-        this.validacionSelloEssaludService = validacionSelloEssaludService;
+        this.documentoPublicadoRepository =
+                documentoPublicadoRepository;
+
+        this.validacionSelloEssaludService =
+                validacionSelloEssaludService;
+
+        this.sftpUploadService =
+                sftpUploadService;
+
+        this.documentoSustentoRepository =
+                documentoSustentoRepository;
+        this.persistenciaResultadoSftpService =
+                persistenciaResultadoSftpService;
     }
 
-    public PublicarDocumentoResponse publicarDocumento(PublicarDocumentoRequest request) {
+    @Transactional
+    public PublicarDocumentoResponse publicarDocumento(
+            PublicarDocumentoRequest request,
+            DocumentoSellado documentoSellado
+    ) {
         validarRequest(request);
 
-        DocumentoSellado documentoSellado =
-                generacionDocumentoSelladoService.obtenerDocumentoSellado(request.getIdDocumentoSellado());
+        if (documentoSellado == null) {
+            throw new IllegalArgumentException(
+                    "El documento sellado temporal es obligatorio para publicar."
+            );
+        }
 
         List<String> observacionesMetadata = validarMetadataDocumentoSellado(request, documentoSellado);
 
@@ -77,6 +101,98 @@ public class PublicacionDocumentoService {
             );
         }
 
+        java.util.Optional<DocumentoPublicado>
+                resultadoSftpPendiente =
+                documentoSustentoRepository
+                        .buscarResultadoSftpPendiente(
+                                request
+                                        .getRegistroInternoProceso(),
+
+                                request
+                                        .getTipoDocumento()
+                        );
+
+        if (resultadoSftpPendiente.isPresent()) {
+
+            DocumentoPublicado metadataPendiente =
+                    resultadoSftpPendiente.get();
+
+            DocumentoPublicado documentoPersistido =
+                    documentoPublicadoRepository
+                            .buscarPorId(
+                                    metadataPendiente
+                                            .getIdDocumentoPublicado()
+                            )
+                            .orElseThrow(
+                                    () -> new IllegalStateException(
+                                            "Existe evidencia de una subida SFTP previa, "
+                                                    + "pero no pudo recuperarse el documento final persistido."
+                                    )
+                            );
+
+            /*
+             * La ruta SFTP durable vive actualmente
+             * en DOCUMENTOS_SUSTENTO.
+             */
+            documentoPersistido.setRutaArchivo(
+                    metadataPendiente
+                            .getRutaArchivo()
+            );
+
+            /*
+             * No se vuelve a llamar al SFTP.
+             * Solo se completa el estado PUBLICADO
+             * pendiente en Oracle.
+             */
+            documentoSustentoRepository
+                    .registrarPublicacion(
+                            documentoPersistido
+                    );
+
+            return convertirDocumentoPublicadoAResponse(
+                    documentoPersistido,
+                    true,
+                    "Se recuperó una publicación SFTP previa y se completó el registro documental sin reenviar el archivo.",
+                    false
+            );
+        }
+
+        SftpUploadResponse resultadoSftp;
+
+        try {
+            resultadoSftp =
+                    sftpUploadService.subirDocumentoSellado(
+                            documentoSellado.getContenidoArchivo(),
+                            documentoSellado.getNombreArchivo(),
+                            request.getTipoDocumentoTrabajador(),
+                            request.getNumeroDocumentoTrabajador()
+                    );
+
+        } catch (Exception e) {
+            List<String> observacionesSftp =
+                    new ArrayList<>();
+
+            String detalleError =
+                    campoVacio(e.getMessage())
+                            ? "Error no especificado por el servicio SFTP."
+                            : e.getMessage();
+
+            observacionesSftp.add(
+                    "No se pudo almacenar el documento sellado en el SFTP: "
+                            + detalleError
+            );
+
+            return construirRespuestaNoPublicada(
+                    request,
+                    documentoSellado,
+                    ESTADO_ERROR_PUBLICACION,
+                    "El documento fue sellado correctamente, pero no pudo ser almacenado en el SFTP.",
+                    true,
+                    true,
+                    observacionesSftp
+            );
+        }
+
         String idDocumentoPublicado = generarIdDocumentoPublicado();
         LocalDateTime fechaHoraPublicacion = LocalDateTime.now(ZONA_HORARIA_LIMA);
 
@@ -87,7 +203,17 @@ public class PublicacionDocumentoService {
         documentoPublicado.setRegistroInternoProceso(documentoSellado.getRegistroInternoProceso());
         documentoPublicado.setTipoDocumento(documentoSellado.getTipoDocumento());
         documentoPublicado.setNumeroDocumentoTrabajador(documentoSellado.getNumeroDocumentoTrabajador());
-        documentoPublicado.setNombreArchivo(documentoSellado.getNombreArchivo());
+        documentoPublicado.setNombreArchivo(
+                resultadoSftp
+                        .getArchivo()
+                        .getNombreArchivo()
+        );
+
+        documentoPublicado.setRutaArchivo(
+                resultadoSftp
+                        .getArchivo()
+                        .getRutaArchivo()
+        );
         documentoPublicado.setContentType(documentoSellado.getContentType());
         documentoPublicado.setContenidoArchivo(documentoSellado.getContenidoArchivo());
         documentoPublicado.setHashSha256DocumentoPublicado(
@@ -99,12 +225,36 @@ public class PublicacionDocumentoService {
         documentoPublicado.setEstadoPublicacionDocumental(ESTADO_DOCUMENTO_PUBLICADO);
         documentoPublicado.setDisponibleParaUsuario(true);
 
-        documentoPublicadoRepository.guardar(documentoPublicado);
+        /*
+         * Primero se conserva durablemente el resultado
+         * exitoso del SFTP en una transacción independiente.
+         *
+         * Si algo falla después de este punto, el reintento
+         * podrá recuperar esta evidencia y no volverá a
+         * enviar el archivo al SFTP.
+         */
+        DocumentoPublicado documentoGuardado =
+                persistenciaResultadoSftpService
+                        .registrarResultadoSftp(
+                                documentoPublicado
+                        );
+
+        /*
+         * Solo después se confirma el estado funcional
+         * PUBLICADO.
+         *
+         * Esta operación pertenece a la transacción
+         * exterior actual.
+         */
+        documentoSustentoRepository
+                .registrarPublicacion(
+                        documentoGuardado
+                );
 
         return convertirDocumentoPublicadoAResponse(
-                documentoPublicado,
+                documentoGuardado,
                 true,
-                "Documento publicado correctamente para visualización del usuario.",
+                "Documento sellado enviado al SFTP y publicado correctamente.",
                 false
         );
     }
@@ -152,18 +302,60 @@ public class PublicacionDocumentoService {
             PublicarDocumentoRequest request,
             DocumentoSellado documentoSellado
     ) {
-        List<String> observaciones = new ArrayList<>();
 
-        if (!documentoSellado.getRegistroInternoProceso().equalsIgnoreCase(request.getRegistroInternoProceso())) {
-            observaciones.add("El registro interno del proceso no coincide con el documento sellado.");
+        List<String> observaciones =
+                new ArrayList<>();
+
+        if (
+                !documentoSellado
+                        .getIdDocumentoSellado()
+                        .equalsIgnoreCase(
+                                request
+                                        .getIdDocumentoSellado()
+                        )
+        ) {
+            observaciones.add(
+                    "El identificador del documento sellado no coincide."
+            );
         }
 
-        if (!documentoSellado.getTipoDocumento().equalsIgnoreCase(request.getTipoDocumento())) {
-            observaciones.add("El tipo de documento no coincide con el documento sellado.");
+        if (
+                !documentoSellado
+                        .getRegistroInternoProceso()
+                        .equalsIgnoreCase(
+                                request
+                                        .getRegistroInternoProceso()
+                        )
+        ) {
+            observaciones.add(
+                    "El registro interno del proceso no coincide con el documento sellado."
+            );
         }
 
-        if (!documentoSellado.getNumeroDocumentoTrabajador().equalsIgnoreCase(request.getNumeroDocumentoTrabajador())) {
-            observaciones.add("El número de documento del trabajador no coincide con el documento sellado.");
+        if (
+                !documentoSellado
+                        .getTipoDocumento()
+                        .equalsIgnoreCase(
+                                request
+                                        .getTipoDocumento()
+                        )
+        ) {
+            observaciones.add(
+                    "El tipo de documento no coincide con el documento sellado."
+            );
+        }
+
+        if (
+                !documentoSellado
+                        .getNumeroDocumentoTrabajador()
+                        .equalsIgnoreCase(
+                                request
+                                        .getNumeroDocumentoTrabajador()
+                        )
+        ) {
+            observaciones.add(
+                    "El número de documento del trabajador no coincide con el documento sellado."
+            );
         }
 
         return observaciones;
@@ -225,6 +417,9 @@ public class PublicacionDocumentoService {
         response.setNumeroDocumentoTrabajador(documentoPublicado.getNumeroDocumentoTrabajador());
 
         response.setNombreArchivo(documentoPublicado.getNombreArchivo());
+        response.setRutaArchivo(
+                documentoPublicado.getRutaArchivo()
+        );
         response.setContentType(documentoPublicado.getContentType());
         response.setHashSha256DocumentoPublicado(documentoPublicado.getHashSha256DocumentoPublicado());
 
@@ -264,6 +459,12 @@ public class PublicacionDocumentoService {
             throw new IllegalArgumentException(
                     "El tipo de documento no es válido. Valores permitidos: "
                             + TipoDocumentoDigital.valoresPermitidos()
+            );
+        }
+
+        if (campoVacio(request.getTipoDocumentoTrabajador())) {
+            throw new IllegalArgumentException(
+                    "El tipo de documento del trabajador es obligatorio."
             );
         }
 

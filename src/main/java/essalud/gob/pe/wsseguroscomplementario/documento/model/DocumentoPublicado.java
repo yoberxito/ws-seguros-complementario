@@ -12,6 +12,7 @@ public class DocumentoPublicado {
     private String numeroDocumentoTrabajador;
 
     private String nombreArchivo;
+    private String rutaArchivo;
     private String contentType;
     private byte[] contenidoArchivo;
 
@@ -137,5 +138,16 @@ public class DocumentoPublicado {
 
     public void setDisponibleParaUsuario(boolean disponibleParaUsuario) {
         this.disponibleParaUsuario = disponibleParaUsuario;
+    }
+
+    public String getRutaArchivo() {
+        return rutaArchivo;
+    }
+
+    public void setRutaArchivo(
+            String rutaArchivo
+    ) {
+        this.rutaArchivo =
+                rutaArchivo;
     }
 }

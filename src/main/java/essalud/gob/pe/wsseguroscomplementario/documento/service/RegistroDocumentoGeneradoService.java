@@ -10,7 +10,7 @@ import essalud.gob.pe.wsseguroscomplementario.documento.model.TipoDocumentoDigit
 import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoGeneradoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
+import java.util.Optional;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -39,7 +39,23 @@ public class RegistroDocumentoGeneradoService {
             MultipartFile archivo
     ) {
         validarRequest(request);
+        String tipoDocumentoNormalizado =
+                normalizarTipoDocumento(
+                        request.getTipoDocumento()
+                );
 
+        Optional<DocumentoGenerado> metadataExistente =
+                documentoGeneradoRepository
+                        .buscarPorRegistroInternoProcesoYTipoDocumento(
+                                request.getRegistroInternoProceso(),
+                                tipoDocumentoNormalizado
+                        );
+
+        if (metadataExistente.isPresent()) {
+            return convertirAResponse(
+                    metadataExistente.get()
+            );
+        }
         ValidacionPdfResponse validacionPdf = validacionPdfService.validarEstructuraTecnica(archivo);
 
         if (!validacionPdf.isValido()) {
@@ -58,7 +74,9 @@ public class RegistroDocumentoGeneradoService {
         documentoGenerado.setIdDocumentoGenerado(idDocumentoGenerado);
         documentoGenerado.setRegistroInternoProceso(request.getRegistroInternoProceso());
 
-        documentoGenerado.setTipoDocumento(normalizarTipoDocumento(request.getTipoDocumento()));
+        documentoGenerado.setTipoDocumento(
+                tipoDocumentoNormalizado
+        );
         documentoGenerado.setVersionFormato(request.getVersionFormato());
 
         documentoGenerado.setTipoDocumentoTrabajador(request.getTipoDocumentoTrabajador());
@@ -86,8 +104,6 @@ public class RegistroDocumentoGeneradoService {
                 )
         );
 
-        documentoGenerado.setContenidoArchivoOriginal(contenidoArchivo);
-
         DocumentoGenerado documentoGuardado = documentoGeneradoRepository.guardar(documentoGenerado);
 
         return convertirAResponse(documentoGuardado);
@@ -105,6 +121,31 @@ public class RegistroDocumentoGeneradoService {
                 .orElseThrow(() -> new IllegalArgumentException("No se encontró el documento generado solicitado."));
 
         return convertirAResponse(documentoGenerado);
+    }
+
+    public Optional<RegistrarDocumentoGeneradoResponse>
+    buscarMetadataPorProcesoYTipoDocumento(
+            String registroInternoProceso,
+            String tipoDocumento
+    ) {
+        if (campoVacio(registroInternoProceso)) {
+            throw new IllegalArgumentException(
+                    "El registro interno del proceso es obligatorio."
+            );
+        }
+
+        if (campoVacio(tipoDocumento)) {
+            throw new IllegalArgumentException(
+                    "El tipo de documento es obligatorio."
+            );
+        }
+
+        return documentoGeneradoRepository
+                .buscarPorRegistroInternoProcesoYTipoDocumento(
+                        registroInternoProceso,
+                        normalizarTipoDocumento(tipoDocumento)
+                )
+                .map(this::convertirAResponse);
     }
 
     public DocumentoGenerado obtenerDocumentoGenerado(String idDocumentoGenerado) {

@@ -17,7 +17,7 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Service;
-
+import java.util.Optional;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -49,42 +49,143 @@ public class GeneracionFormulario6012Service {
         this.registroDocumentoGeneradoService = registroDocumentoGeneradoService;
     }
 
-    public GenerarFormulario6012Response generarFormulario6012(
+    public synchronized GenerarFormulario6012Response generarFormulario6012(
             GenerarFormulario6012Request request
     ) {
         validarRequest(request);
 
-        String idDocumentoGenerado = generarIdDocumentoGenerado();
-        String nombreArchivo = construirNombreArchivo(request);
+        int totalBeneficiarios =
+                request.getBeneficiarios().size();
 
-        int totalBeneficiarios = request.getBeneficiarios().size();
-        int totalPaginas = calcularTotalPaginas(totalBeneficiarios);
+        int totalPaginas =
+                calcularTotalPaginas(totalBeneficiarios);
 
-        byte[] pdfGenerado = generarPdfFormulario6012(
-                request,
-                idDocumentoGenerado,
+        Optional<RegistrarDocumentoGeneradoResponse> metadataExistente =
+                registroDocumentoGeneradoService
+                        .buscarMetadataPorProcesoYTipoDocumento(
+                                request.getRegistroInternoProceso(),
+                                TIPO_DOCUMENTO_6012
+                        );
+
+        if (metadataExistente.isPresent()) {
+            validarMetadataExistenteFormulario6012(
+                    metadataExistente.get(),
+                    totalBeneficiarios,
+                    totalPaginas
+            );
+        }
+
+        String idDocumentoGenerado =
+                metadataExistente
+                        .map(
+                                RegistrarDocumentoGeneradoResponse::
+                                        getIdDocumentoGenerado
+                        )
+                        .orElseGet(
+                                this::generarIdDocumentoGenerado
+                        );
+
+        String nombreArchivo =
+                construirNombreArchivo(request);
+
+        byte[] pdfGenerado =
+                generarPdfFormulario6012(
+                        request,
+                        idDocumentoGenerado,
+                        totalPaginas
+                );
+
+        RegistrarDocumentoGeneradoResponse metadataDocumentoGenerado =
+                metadataExistente.orElseGet(
+                        () -> registrarMetadataDocumentoGenerado(
+                                request,
+                                idDocumentoGenerado,
+                                nombreArchivo,
+                                pdfGenerado
+                        )
+                );
+
+        GenerarFormulario6012Response response =
+                new GenerarFormulario6012Response();
+
+        response.setGenerado(true);
+
+        response.setMensajeGeneracion(
+                metadataExistente.isPresent()
+                        ? "Formulario 6012 regenerado correctamente utilizando la metadata documental existente."
+                        : "Formulario 6012 generado correctamente."
+        );
+
+        response.setNombreArchivo(nombreArchivo);
+        response.setContentType(CONTENT_TYPE_PDF);
+
+        response.setArchivoBase64(
+                Base64.getEncoder()
+                        .encodeToString(pdfGenerado)
+        );
+
+        response.setCantidadBeneficiariosRegistrados(
+                totalBeneficiarios
+        );
+
+        response.setNumeroPaginasGeneradas(
                 totalPaginas
         );
 
-        RegistrarDocumentoGeneradoResponse metadataDocumentoGenerado =
-                registrarMetadataDocumentoGenerado(
-                        request,
-                        idDocumentoGenerado,
-                        nombreArchivo,
-                        pdfGenerado
-                );
-
-        GenerarFormulario6012Response response = new GenerarFormulario6012Response();
-        response.setGenerado(true);
-        response.setMensajeGeneracion("Formulario 6012 generado correctamente.");
-        response.setNombreArchivo(nombreArchivo);
-        response.setContentType(CONTENT_TYPE_PDF);
-        response.setArchivoBase64(Base64.getEncoder().encodeToString(pdfGenerado));
-        response.setCantidadBeneficiariosRegistrados(totalBeneficiarios);
-        response.setNumeroPaginasGeneradas(totalPaginas);
-        response.setMetadataDocumentoGenerado(metadataDocumentoGenerado);
+        response.setMetadataDocumentoGenerado(
+                metadataDocumentoGenerado
+        );
 
         return response;
+    }
+
+
+    private void validarMetadataExistenteFormulario6012(
+            RegistrarDocumentoGeneradoResponse metadata,
+            int totalBeneficiarios,
+            int totalPaginas
+    ) {
+        if (
+                metadata == null
+                        || campoVacio(
+                        metadata.getIdDocumentoGenerado()
+                )
+        ) {
+            throw new IllegalArgumentException(
+                    "La metadata existente del Formulario 6012 no contiene un identificador documental válido."
+            );
+        }
+
+        if (
+                !VERSION_FORMATO_6012.equalsIgnoreCase(
+                        valor(
+                                metadata.getVersionFormato()
+                        )
+                )
+        ) {
+            throw new IllegalArgumentException(
+                    "La versión del Formulario 6012 no coincide con la metadata documental existente."
+            );
+        }
+
+        if (
+                metadata.getNumeroPaginasGeneradas()
+                        != totalPaginas
+        ) {
+            throw new IllegalArgumentException(
+                    "Los datos actuales producirían una cantidad de páginas distinta a la metadata del Formulario 6012 ya generado."
+            );
+        }
+
+        if (
+                metadata
+                        .getCantidadBeneficiariosRegistrados()
+                        != totalBeneficiarios
+        ) {
+            throw new IllegalArgumentException(
+                    "La cantidad de beneficiarios no coincide con la metadata del Formulario 6012 ya generado."
+            );
+        }
     }
 
     private byte[] generarPdfFormulario6012(

@@ -6,7 +6,7 @@ import essalud.gob.pe.wsseguroscomplementario.documento.dto.ValidacionPdfRespons
 import essalud.gob.pe.wsseguroscomplementario.documento.model.RechazoDocumento;
 import essalud.gob.pe.wsseguroscomplementario.documento.repository.RechazoDocumentoRepository;
 import org.springframework.stereotype.Service;
-
+import essalud.gob.pe.wsseguroscomplementario.documento.dto.ValidacionDocumentalCompletaResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -105,5 +105,73 @@ public class RechazoDocumentoService {
         }
 
         return valor;
+    }
+
+    public RechazoDocumento registrarRechazoDesdeValidacionCompleta(
+            ValidacionDocumentalCompletaResponse response,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        RechazoDocumento rechazoDocumento =
+                new RechazoDocumento();
+
+        rechazoDocumento.setIdRechazoDocumental(
+                generarIdRechazo()
+        );
+
+        rechazoDocumento.setRegistroInternoProceso(
+                response.getRegistroInternoProceso()
+        );
+
+        rechazoDocumento.setIdDocumentoCargado(
+                response.getIdDocumentoCargado()
+        );
+
+        rechazoDocumento.setTipoDocumento(
+                response.getTipoDocumento()
+        );
+
+        rechazoDocumento.setTipoDocumentoTrabajador(
+                response.getTipoDocumentoTrabajador()
+        );
+
+        rechazoDocumento.setNumeroDocumentoTrabajador(
+                response.getNumeroDocumentoTrabajador()
+        );
+
+        rechazoDocumento.setEstadoValidacionDocumental(
+                ESTADO_RECHAZADO_VALIDACION
+        );
+
+        rechazoDocumento.setPermiteNuevaCarga(
+                true
+        );
+
+        rechazoDocumento.setMotivosRechazo(
+                List.of(
+                        response.getMensajeValidacion()
+                )
+        );
+
+        rechazoDocumento.setFechaHoraRechazo(
+                response.getFechaHoraValidacion()
+        );
+
+        rechazoDocumento.setIpOrigen(
+                ipOrigen
+        );
+
+        rechazoDocumento.setDatosSesionDispositivo(
+                valorPorDefecto(
+                        datosSesionDispositivo,
+                        "Sesión local / dispositivo no informado"
+                )
+        );
+
+        return rechazoDocumentoRepository
+                .guardar(
+                        rechazoDocumento
+                );
     }
 }

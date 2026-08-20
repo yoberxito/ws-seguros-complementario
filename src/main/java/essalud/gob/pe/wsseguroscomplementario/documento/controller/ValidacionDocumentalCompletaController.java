@@ -46,8 +46,11 @@ public class ValidacionDocumentalCompletaController {
                     );
 
             if (!response.isDocumentoAprobado()) {
-                return ResponseEntity.badRequest().body(
-                        ApiResponse.error(response.getMensajeValidacion(), response)
+                return ResponseEntity.ok(
+                        ApiResponse.error(
+                                response.getMensajeValidacion(),
+                                response
+                        )
                 );
             }
 

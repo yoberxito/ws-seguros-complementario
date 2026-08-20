@@ -26,8 +26,6 @@ public class DocumentoCargado {
     private boolean validacionTecnicaPdf;
     private List<String> observaciones = new ArrayList<>();
 
-    private byte[] contenidoArchivo;
-
     public DocumentoCargado() {
     }
 
@@ -149,13 +147,5 @@ public class DocumentoCargado {
 
     public void setObservaciones(List<String> observaciones) {
         this.observaciones = observaciones;
-    }
-
-    public byte[] getContenidoArchivo() {
-        return contenidoArchivo;
-    }
-
-    public void setContenidoArchivo(byte[] contenidoArchivo) {
-        this.contenidoArchivo = contenidoArchivo;
     }
 }

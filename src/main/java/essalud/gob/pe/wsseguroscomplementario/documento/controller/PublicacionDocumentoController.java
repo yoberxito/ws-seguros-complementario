@@ -1,7 +1,6 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.controller;
 
 import essalud.gob.pe.wsseguroscomplementario.common.dto.ApiResponse;
-import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoRequest;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoPublicado;
 import essalud.gob.pe.wsseguroscomplementario.documento.service.PublicacionDocumentoService;
@@ -23,31 +22,6 @@ public class PublicacionDocumentoController {
             PublicacionDocumentoService publicacionDocumentoService
     ) {
         this.publicacionDocumentoService = publicacionDocumentoService;
-    }
-
-    @PostMapping("/publicar")
-    public ResponseEntity<ApiResponse<PublicarDocumentoResponse>> publicarDocumento(
-            @RequestBody PublicarDocumentoRequest request
-    ) {
-        try {
-            PublicarDocumentoResponse response =
-                    publicacionDocumentoService.publicarDocumento(request);
-
-            if (!response.isPublicado()) {
-                return ResponseEntity.badRequest().body(
-                        ApiResponse.error(response.getMensajePublicacion(), response)
-                );
-            }
-
-            return ResponseEntity.ok(
-                    ApiResponse.exito(response.getMensajePublicacion(), response)
-            );
-
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(
-                    ApiResponse.error(e.getMessage(), null)
-            );
-        }
     }
 
     @GetMapping("/{idDocumentoPublicado}/archivo")

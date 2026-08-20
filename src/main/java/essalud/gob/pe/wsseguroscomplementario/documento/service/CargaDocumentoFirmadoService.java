@@ -6,9 +6,10 @@ import essalud.gob.pe.wsseguroscomplementario.documento.dto.CargarDocumentoFirma
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.ValidacionPdfResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoCargado;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.TipoDocumentoDigital;
-import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoCargadoRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoSustentoRepository;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.RechazoDocumento;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -18,25 +19,42 @@ import java.util.UUID;
 public class CargaDocumentoFirmadoService {
 
     private final ValidacionPdfService validacionPdfService;
-    private final DocumentoCargadoRepository documentoCargadoRepository;
     private final RechazoDocumentoService rechazoDocumentoService;
+    private final DocumentoSustentoRepository documentoSustentoRepository;
 
     public CargaDocumentoFirmadoService(
             ValidacionPdfService validacionPdfService,
-            DocumentoCargadoRepository documentoCargadoRepository,
-            RechazoDocumentoService rechazoDocumentoService
+            RechazoDocumentoService rechazoDocumentoService,
+            DocumentoSustentoRepository documentoSustentoRepository
     ) {
-        this.validacionPdfService = validacionPdfService;
-        this.documentoCargadoRepository = documentoCargadoRepository;
-        this.rechazoDocumentoService = rechazoDocumentoService;
-    }
+        this.validacionPdfService =
+                validacionPdfService;
 
+        this.rechazoDocumentoService =
+                rechazoDocumentoService;
+
+        this.documentoSustentoRepository =
+                documentoSustentoRepository;
+    }
+    @Transactional
     public CargarDocumentoFirmadoResponse cargarDocumentoFirmado(
             CargarDocumentoFirmadoRequest request,
             MultipartFile archivo,
             String ipOrigen
     ) {
         validarRequest(request);
+
+        if (
+                documentoSustentoRepository
+                        .estaPublicado(
+                                request.getRegistroInternoProceso(),
+                                request.getTipoDocumento()
+                        )
+        ) {
+            throw new IllegalArgumentException(
+                    "El documento ya se encuentra publicado y no admite nuevas cargas."
+            );
+        }
 
         ValidacionPdfResponse validacionPdf = validacionPdfService.validarEstructuraTecnica(archivo);
 
@@ -68,11 +86,15 @@ public class CargaDocumentoFirmadoService {
 
         documentoCargado.setValidacionTecnicaPdf(true);
         documentoCargado.setObservaciones(validacionPdf.getObservaciones());
-        documentoCargado.setContenidoArchivo(contenidoArchivo);
 
-        DocumentoCargado documentoGuardado = documentoCargadoRepository.guardar(documentoCargado);
+        documentoSustentoRepository
+                .registrarCargaExitosa(
+                        documentoCargado
+                );
 
-        return convertirAResponse(documentoGuardado);
+        return convertirAResponse(
+                documentoCargado
+        );
     }
 
     private void validarRequest(CargarDocumentoFirmadoRequest request) {
@@ -126,6 +148,24 @@ public class CargaDocumentoFirmadoService {
                 validacionPdf,
                 ipOrigen
         );
+
+        String motivoRechazo =
+                validacionPdf.getObservaciones() == null
+                        || validacionPdf.getObservaciones().isEmpty()
+                        ? "El documento no supera las validaciones técnicas."
+                        : String.join(
+                        " ",
+                        validacionPdf.getObservaciones()
+                );
+
+        documentoSustentoRepository
+                .registrarValidacionRechazada(
+                        request.getRegistroInternoProceso(),
+                        request.getTipoDocumento(),
+                        rechazoDocumento.getFechaHoraRechazo(),
+                        rechazoDocumento.getIdRechazoDocumental(),
+                        motivoRechazo
+                );
 
         CargarDocumentoFirmadoResponse response = new CargarDocumentoFirmadoResponse();
 

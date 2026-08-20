@@ -3,7 +3,6 @@ package essalud.gob.pe.wsseguroscomplementario.documento.service;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.GenerarDocumentoSelladoResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoSellado;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.TipoDocumentoDigital;
-import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoSelladoRepository;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -38,20 +37,104 @@ public class GeneracionDocumentoSelladoService {
     private static final DateTimeFormatter FORMATO_FECHA_SELLO = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter FORMATO_HORA_SELLO = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private final DocumentoSelladoRepository documentoSelladoRepository;
-
-    public GeneracionDocumentoSelladoService(
-            DocumentoSelladoRepository documentoSelladoRepository
-    ) {
-        this.documentoSelladoRepository = documentoSelladoRepository;
-    }
-
     public GenerarDocumentoSelladoResponse generarDocumentoSellado(
             MultipartFile archivo,
             String registroInternoProceso,
             String tipoDocumento,
             String numeroDocumentoTrabajador
     ) {
+
+        DocumentoSellado documentoSellado =
+                generarDocumentoSelladoTemporal(
+                        archivo,
+                        registroInternoProceso,
+                        tipoDocumento,
+                        numeroDocumentoTrabajador
+                );
+
+        GenerarDocumentoSelladoResponse response =
+                new GenerarDocumentoSelladoResponse();
+
+        response.setDocumentoSellado(true);
+
+        response.setMensajeSellado(
+                "Documento sellado internamente por el sistema."
+        );
+
+        response.setIdDocumentoSellado(
+                documentoSellado
+                        .getIdDocumentoSellado()
+        );
+
+        response.setRegistroInternoProceso(
+                documentoSellado
+                        .getRegistroInternoProceso()
+        );
+
+        response.setTipoDocumento(
+                documentoSellado
+                        .getTipoDocumento()
+        );
+
+        response.setNumeroDocumentoTrabajador(
+                documentoSellado
+                        .getNumeroDocumentoTrabajador()
+        );
+
+        response.setNombreArchivo(
+                documentoSellado
+                        .getNombreArchivo()
+        );
+
+        response.setContentType(
+                documentoSellado
+                        .getContentType()
+        );
+
+        response.setArchivoBase64(
+                Base64.getEncoder()
+                        .encodeToString(
+                                documentoSellado
+                                        .getContenidoArchivo()
+                        )
+        );
+
+        response.setNumeroPaginasSelladas(
+                documentoSellado
+                        .getNumeroPaginasSelladas()
+        );
+
+        response.setHashSha256DocumentoSellado(
+                documentoSellado
+                        .getHashSha256DocumentoSellado()
+        );
+
+        response.setFechaHoraSellado(
+                documentoSellado
+                        .getFechaHoraSellado()
+        );
+
+        response.setEstadoDocumentoSellado(
+                documentoSellado
+                        .getEstadoDocumentoSellado()
+        );
+
+        response.setRequiereVerificacionSello(
+                true
+        );
+
+        return response;
+    }
+
+
+    public DocumentoSellado
+    generarDocumentoSelladoTemporal(
+            MultipartFile archivo,
+            String registroInternoProceso,
+            String tipoDocumento,
+            String numeroDocumentoTrabajador
+    ) {
+
         validarParametros(
                 archivo,
                 registroInternoProceso,
@@ -59,65 +142,91 @@ public class GeneracionDocumentoSelladoService {
                 numeroDocumentoTrabajador
         );
 
-        String tipoDocumentoNormalizado = normalizar(tipoDocumento);
-        String idDocumentoSellado = generarIdDocumentoSellado();
+        String tipoDocumentoNormalizado =
+                normalizar(
+                        tipoDocumento
+                );
 
-        LocalDateTime fechaHoraSellado = LocalDateTime.now(ZONA_HORARIA_LIMA);
+        String idDocumentoSellado =
+                generarIdDocumentoSellado();
 
-        byte[] pdfSellado = sellarDocumentoPdf(
-                archivo,
-                tipoDocumentoNormalizado,
-                fechaHoraSellado
+        LocalDateTime fechaHoraSellado =
+                LocalDateTime.now(
+                        ZONA_HORARIA_LIMA
+                );
+
+        byte[] pdfSellado =
+                sellarDocumentoPdf(
+                        archivo,
+                        tipoDocumentoNormalizado,
+                        fechaHoraSellado
+                );
+
+        String nombreArchivoSellado =
+                construirNombreArchivoSellado(
+                        archivo.getOriginalFilename(),
+                        tipoDocumentoNormalizado,
+                        numeroDocumentoTrabajador
+                );
+
+        String hashDocumentoSellado =
+                calcularSha256(
+                        pdfSellado
+                );
+
+        int numeroPaginasSelladas =
+                contarPaginas(
+                        pdfSellado
+                );
+
+        DocumentoSellado documentoSellado =
+                new DocumentoSellado();
+
+        documentoSellado.setIdDocumentoSellado(
+                idDocumentoSellado
         );
 
-        String nombreArchivoSellado = construirNombreArchivoSellado(
-                archivo.getOriginalFilename(),
-                tipoDocumentoNormalizado,
+        documentoSellado.setRegistroInternoProceso(
+                registroInternoProceso
+        );
+
+        documentoSellado.setTipoDocumento(
+                tipoDocumentoNormalizado
+        );
+
+        documentoSellado.setNumeroDocumentoTrabajador(
                 numeroDocumentoTrabajador
         );
 
-        String hashDocumentoSellado = calcularSha256(pdfSellado);
-        int numeroPaginasSelladas = contarPaginas(pdfSellado);
+        documentoSellado.setNombreArchivo(
+                nombreArchivoSellado
+        );
 
-        DocumentoSellado documentoSellado = new DocumentoSellado();
+        documentoSellado.setContentType(
+                CONTENT_TYPE_PDF
+        );
 
-        documentoSellado.setIdDocumentoSellado(idDocumentoSellado);
-        documentoSellado.setRegistroInternoProceso(registroInternoProceso);
-        documentoSellado.setTipoDocumento(tipoDocumentoNormalizado);
-        documentoSellado.setNumeroDocumentoTrabajador(numeroDocumentoTrabajador);
-        documentoSellado.setNombreArchivo(nombreArchivoSellado);
-        documentoSellado.setContentType(CONTENT_TYPE_PDF);
-        documentoSellado.setContenidoArchivo(pdfSellado);
-        documentoSellado.setNumeroPaginasSelladas(numeroPaginasSelladas);
-        documentoSellado.setHashSha256DocumentoSellado(hashDocumentoSellado);
-        documentoSellado.setFechaHoraSellado(fechaHoraSellado);
-        documentoSellado.setEstadoDocumentoSellado(ESTADO_DOCUMENTO_SELLADO);
+        documentoSellado.setContenidoArchivo(
+                pdfSellado
+        );
 
-        documentoSelladoRepository.guardar(documentoSellado);
+        documentoSellado.setNumeroPaginasSelladas(
+                numeroPaginasSelladas
+        );
 
-        GenerarDocumentoSelladoResponse response = new GenerarDocumentoSelladoResponse();
+        documentoSellado.setHashSha256DocumentoSellado(
+                hashDocumentoSellado
+        );
 
-        response.setDocumentoSellado(true);
-        response.setMensajeSellado("Documento sellado internamente por el sistema.");
-        response.setIdDocumentoSellado(idDocumentoSellado);
-        response.setRegistroInternoProceso(registroInternoProceso);
-        response.setTipoDocumento(tipoDocumentoNormalizado);
-        response.setNumeroDocumentoTrabajador(numeroDocumentoTrabajador);
-        response.setNombreArchivo(nombreArchivoSellado);
-        response.setContentType(CONTENT_TYPE_PDF);
-        response.setArchivoBase64(Base64.getEncoder().encodeToString(pdfSellado));
-        response.setNumeroPaginasSelladas(numeroPaginasSelladas);
-        response.setHashSha256DocumentoSellado(hashDocumentoSellado);
-        response.setFechaHoraSellado(fechaHoraSellado);
-        response.setEstadoDocumentoSellado(ESTADO_DOCUMENTO_SELLADO);
-        response.setRequiereVerificacionSello(true);
+        documentoSellado.setFechaHoraSellado(
+                fechaHoraSellado
+        );
 
-        return response;
-    }
+        documentoSellado.setEstadoDocumentoSellado(
+                ESTADO_DOCUMENTO_SELLADO
+        );
 
-    public DocumentoSellado obtenerDocumentoSellado(String idDocumentoSellado) {
-        return documentoSelladoRepository.buscarPorId(idDocumentoSellado)
-                .orElseThrow(() -> new IllegalArgumentException("No se encontró el documento sellado solicitado."));
+        return documentoSellado;
     }
 
     private byte[] sellarDocumentoPdf(
@@ -232,7 +341,7 @@ public class GeneracionDocumentoSelladoService {
         if ("AUTORIZACION_DESCUENTO".equalsIgnoreCase(tipoDocumento)) {
             // Coordenada inicial estimada para la autorización.
             // Se ajusta visualmente cuando probemos con el PDF sellado.
-            return new ZonaSelloPdf(355, 428, 134, 85);
+            return new ZonaSelloPdf(235, 428, 134, 85);
         }
 
         return new ZonaSelloPdf(360, 70, 134, 85);

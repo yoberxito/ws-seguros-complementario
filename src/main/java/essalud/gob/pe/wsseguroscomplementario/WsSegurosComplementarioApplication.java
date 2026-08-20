@@ -9,5 +9,4 @@ public class WsSegurosComplementarioApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(WsSegurosComplementarioApplication.class, args);
 	}
-
 }

@@ -5,7 +5,16 @@ import essalud.gob.pe.wsseguroscomplementario.expediente.dto.ExpedienteDigitalRe
 import essalud.gob.pe.wsseguroscomplementario.expediente.service.ExpedienteDigitalService;
 import essalud.gob.pe.wsseguroscomplementario.proceso.dto.RecuperarAvanceProcesoResponse;
 import org.springframework.stereotype.Service;
+import essalud.gob.pe.wsseguroscomplementario.aceptacion.model.AceptacionLegal;
+import essalud.gob.pe.wsseguroscomplementario.aceptacion.repository.AceptacionRepository;
 
+import essalud.gob.pe.wsseguroscomplementario.proceso.dto.FormularioVidaRecuperadoResponse;
+import essalud.gob.pe.wsseguroscomplementario.proceso.model.BeneficiarioVida;
+import essalud.gob.pe.wsseguroscomplementario.proceso.model.ProcesoVida;
+import essalud.gob.pe.wsseguroscomplementario.proceso.repository.BeneficiarioVidaRepository;
+import essalud.gob.pe.wsseguroscomplementario.proceso.repository.ProcesoVidaRepository;
+
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,53 +23,708 @@ public class ReanudacionProcesoService {
 
     private final ExpedienteDigitalService expedienteDigitalService;
 
+    private final ProcesoVidaRepository
+            procesoVidaRepository;
+
+    private final BeneficiarioVidaRepository
+            beneficiarioVidaRepository;
+
+    private final AceptacionRepository
+            aceptacionRepository;
+
     public ReanudacionProcesoService(
-            ExpedienteDigitalService expedienteDigitalService
+
+            ExpedienteDigitalService
+                    expedienteDigitalService,
+
+            ProcesoVidaRepository
+                    procesoVidaRepository,
+
+            BeneficiarioVidaRepository
+                    beneficiarioVidaRepository,
+
+            AceptacionRepository
+                    aceptacionRepository
     ) {
-        this.expedienteDigitalService = expedienteDigitalService;
+        this.expedienteDigitalService =
+                expedienteDigitalService;
+
+        this.procesoVidaRepository =
+                procesoVidaRepository;
+
+        this.beneficiarioVidaRepository =
+                beneficiarioVidaRepository;
+
+        this.aceptacionRepository =
+                aceptacionRepository;
     }
 
-    public RecuperarAvanceProcesoResponse recuperarPorRegistroInternoProceso(
+    public RecuperarAvanceProcesoResponse
+    recuperarPorRegistroInternoProceso(
             String registroInternoProceso
     ) {
-        if (campoVacio(registroInternoProceso)) {
-            throw new IllegalArgumentException("El registro interno del proceso es obligatorio.");
+
+        if (campoVacio(
+                registroInternoProceso
+        )) {
+            throw new IllegalArgumentException(
+                    "El registro interno del proceso es obligatorio."
+            );
         }
 
-        try {
-            ExpedienteDigitalResponse expediente =
-                    expedienteDigitalService.obtenerPorRegistroInternoProceso(registroInternoProceso);
+        String registro =
+                registroInternoProceso.trim();
 
-            return construirResponseDesdeExpediente(expediente);
+        Optional<ProcesoVida> procesoOptional =
+                procesoVidaRepository
+                        .buscarPorRegistroInternoProceso(
+                                registro
+                        );
 
-        } catch (IllegalArgumentException e) {
-            return construirResponseSinExpediente(
-                    registroInternoProceso,
-                    null,
-                    "No se encontró expediente digital asociado al registro interno informado."
+        /*
+         * TEMP_SECOMASVIDA pasa a ser la fuente
+         * principal para determinar si el trámite
+         * +Vida realmente existe.
+         */
+        if (procesoOptional.isEmpty()) {
+            return construirResponseSinProcesoOracle(
+                    registro
+            );
+        }
+
+        ProcesoVida proceso =
+                procesoOptional.get();
+
+        RecuperarAvanceProcesoResponse response =
+                construirResponseDesdeProcesoOracle(
+                        proceso
+                );
+
+        /*
+         * El expediente digital es complementario.
+         *
+         * Si existe en memoria, agregamos su
+         * información documental.
+         *
+         * Si no existe —por ejemplo después de
+         * reiniciar el backend— el recupero del
+         * formulario sigue siendo válido.
+         */
+        complementarConExpedienteSiExiste(
+                response,
+                registro
+        );
+
+        return response;
+    }
+
+    public RecuperarAvanceProcesoResponse
+    recuperarUltimoPorTrabajador(
+            String tipoDocumentoTrabajador,
+            String numeroDocumentoTrabajador
+    ) {
+
+        if (campoVacio(
+                tipoDocumentoTrabajador
+        )) {
+            throw new IllegalArgumentException(
+                    "El tipo de documento del trabajador es obligatorio."
+            );
+        }
+
+        if (campoVacio(
+                numeroDocumentoTrabajador
+        )) {
+            throw new IllegalArgumentException(
+                    "El número de documento del trabajador es obligatorio."
+            );
+        }
+
+        String tipoDocumento =
+                tipoDocumentoTrabajador.trim();
+
+        String numeroDocumento =
+                numeroDocumentoTrabajador.trim();
+
+        Optional<ProcesoVida> procesoOptional =
+                procesoVidaRepository
+                        .buscarUltimoPorTrabajador(
+                                tipoDocumento,
+                                numeroDocumento
+                        );
+
+        if (procesoOptional.isEmpty()) {
+
+            RecuperarAvanceProcesoResponse response =
+                    construirResponseSinProcesoOracle(
+                            null
+                    );
+
+            response.setTipoDocumentoTrabajador(
+                    tipoDocumento
+            );
+
+            response.setNumeroDocumentoTrabajador(
+                    numeroDocumento
+            );
+
+            response.setMensajeConsulta(
+                    "No se encontró un proceso +Vida persistido para el trabajador informado."
+            );
+
+            return response;
+        }
+
+        /*
+         * Una vez identificado el último proceso
+         * directamente desde Oracle, se reutiliza
+         * la recuperación integral existente.
+         */
+        return recuperarPorRegistroInternoProceso(
+                procesoOptional
+                        .get()
+                        .getRegistroInternoProceso()
+        );
+    }
+
+    private RecuperarAvanceProcesoResponse
+    construirResponseDesdeProcesoOracle(
+            ProcesoVida proceso
+    ) {
+
+        RecuperarAvanceProcesoResponse response =
+                new RecuperarAvanceProcesoResponse();
+
+        response.setProcesoEncontrado(true);
+
+        /*
+         * Al construir inicialmente desde Oracle
+         * todavía no sabemos si existe un
+         * ExpedienteDigital cargado en memoria.
+         */
+        response.setExpedienteEncontrado(false);
+
+        response.setMensajeConsulta(
+                "Proceso +Vida recuperado correctamente desde Oracle."
+        );
+
+        response.setRegistroInternoProceso(
+                proceso.getRegistroInternoProceso()
+        );
+
+        response.setTipoDocumentoTrabajador(
+                proceso.getCodigoDocumentoTitular()
+        );
+
+        response.setNumeroDocumentoTrabajador(
+                proceso.getNumeroDocumentoTitular()
+        );
+
+        response.setNombresApellidosTrabajador(
+                construirNombreCompletoTitular(
+                        proceso
+                )
+        );
+
+        response.setCodigoEstadoProceso(
+                proceso.getCodigoEstadoProceso()
+        );
+
+        response.setRutaFrontend(
+                proceso.getRutaFrontend()
+        );
+
+        response.setCodigoEstadoNavegacion(
+                proceso.getCodigoEstadoNavegacion()
+        );
+
+        response.setRutaFrontendNavegacion(
+                proceso.getRutaFrontendNavegacion()
+        );
+
+        response.setEstadoOperativo(
+                proceso.getEstadoOperativo()
+        );
+
+        response.setTipoFlujo(
+                proceso.getTipoFlujo()
+        );
+
+        response.setFechaRegistroProceso(
+                proceso.getFechaRegistro()
+        );
+
+        response.setFechaActualizacionProceso(
+                proceso.getFechaActualizacion()
+        );
+
+        List<BeneficiarioVida> beneficiarios =
+                beneficiarioVidaRepository
+                        .listarPorIdSecomasvida(
+                                proceso.getIdSecomasvida()
+                        );
+
+        Optional<AceptacionLegal> aceptacion =
+                aceptacionRepository
+                        .buscarPorRegistroInternoProceso(
+                                proceso
+                                        .getRegistroInternoProceso()
+                        );
+
+        response.setFormularioVida(
+                construirFormularioVidaRecuperado(
+                        proceso,
+                        beneficiarios,
+                        aceptacion.orElse(null)
+                )
+        );
+
+        boolean observado =
+                "OBSERVADO".equalsIgnoreCase(
+                        proceso.getEstadoOperativo()
+                );
+
+        response.setPuedeContinuarEnModulo(
+                !observado
+        );
+
+        response.setPermiteNuevaCargaTrabajador(
+                false
+        );
+
+        response.setRequiereIntervencionInterna(
+                observado
+        );
+
+        response.setDocumentosDisponiblesParaConsulta(
+                false
+        );
+
+        if (observado) {
+            response.setMensajeUsuario(
+                    "El proceso fue recuperado, pero se encuentra en atención interna."
+            );
+        } else {
+            response.setMensajeUsuario(
+                    "El proceso fue recuperado correctamente. Puede continuar desde la etapa guardada."
+            );
+        }
+
+        return response;
+    }
+
+    private FormularioVidaRecuperadoResponse
+    construirFormularioVidaRecuperado(
+
+            ProcesoVida proceso,
+
+            List<BeneficiarioVida>
+                    beneficiarios,
+
+            AceptacionLegal aceptacion
+    ) {
+
+        FormularioVidaRecuperadoResponse
+                .TitularRecuperado titular =
+
+                new FormularioVidaRecuperadoResponse
+                        .TitularRecuperado(
+
+                        proceso
+                                .getCodigoDocumentoTitular(),
+
+                        proceso
+                                .getDescripcionOtroDocumentoTitular(),
+
+                        proceso
+                                .getNumeroDocumentoTitular(),
+
+                        proceso
+                                .getApellidoPaternoTitular(),
+
+                        proceso
+                                .getApellidoMaternoTitular(),
+
+                        proceso
+                                .getPrimerNombreTitular(),
+
+                        proceso
+                                .getSegundoNombreTitular(),
+
+                        proceso.getCorreo(),
+
+                        proceso.getNumeroTelefono(),
+
+                        proceso.getTipoAsegurado(),
+
+                        proceso
+                                .getNotificacionesCorreo()
+                );
+
+        FormularioVidaRecuperadoResponse
+                .DatosComplementariosRecuperados
+                datosComplementarios =
+
+                new FormularioVidaRecuperadoResponse
+                        .DatosComplementariosRecuperados(
+
+                        proceso.getCodigoPlanilla(),
+
+                        proceso.getDecretoLegislativo(),
+
+                        proceso.getConvenioCgbvp(),
+
+                        proceso.getRucEmpleador(),
+
+                        proceso
+                                .getRazonSocialEntidad()
+                );
+
+        FormularioVidaRecuperadoResponse
+                .ConyugeRecuperado conyuge = null;
+
+        if (existeConyuge(proceso)) {
+
+            conyuge =
+                    new FormularioVidaRecuperadoResponse
+                            .ConyugeRecuperado(
+
+                            proceso
+                                    .getCodigoDocumentoConyuge(),
+
+                            proceso
+                                    .getDescripcionOtroDocumentoConyuge(),
+
+                            proceso
+                                    .getNumeroDocumentoConyuge(),
+
+                            proceso
+                                    .getApellidoPaternoConyuge(),
+
+                            proceso
+                                    .getApellidoMaternoConyuge(),
+
+                            proceso
+                                    .getPrimerNombreConyuge(),
+
+                            proceso
+                                    .getSegundoNombreConyuge(),
+
+                            proceso
+                                    .getTipoRelacion()
+                    );
+        }
+
+        List<FormularioVidaRecuperadoResponse
+                .BeneficiarioRecuperado>
+                beneficiariosRecuperados =
+                new ArrayList<>();
+
+        if (beneficiarios != null) {
+
+            for (
+                    BeneficiarioVida beneficiario :
+                    beneficiarios
+            ) {
+
+                beneficiariosRecuperados.add(
+
+                        new FormularioVidaRecuperadoResponse
+                                .BeneficiarioRecuperado(
+
+                                beneficiario
+                                        .getOrdenBeneficiario(),
+
+                                beneficiario
+                                        .getCodigoDocumentoBeneficiario(),
+
+                                beneficiario
+                                        .getDescripcionOtroDocumentoBeneficiario(),
+
+                                beneficiario
+                                        .getNumeroDocumentoBeneficiario(),
+
+                                beneficiario
+                                        .getApellidoPaterno(),
+
+                                beneficiario
+                                        .getApellidoMaterno(),
+
+                                beneficiario
+                                        .getPrimerNombre(),
+
+                                beneficiario
+                                        .getSegundoNombre(),
+
+                                beneficiario
+                                        .getPorcentajeBeneficio()
+                        )
+                );
+            }
+        }
+
+        FormularioVidaRecuperadoResponse
+                .AceptacionLegalRecuperada
+                aceptacionRecuperada = null;
+
+        if (aceptacion != null) {
+
+            aceptacionRecuperada =
+                    new FormularioVidaRecuperadoResponse
+                            .AceptacionLegalRecuperada(
+
+                            aceptacion
+                                    .getIdAceptacion(),
+
+                            aceptacion
+                                    .isAceptaDeclaracionJurada(),
+
+                            aceptacion
+                                    .getFechaHoraAceptacionDeclaracionJurada(),
+
+                            aceptacion
+                                    .isAceptaTratamientoDatosPersonales(),
+
+                            aceptacion
+                                    .getFechaHoraAceptacionTratamientoDatosPersonales(),
+
+                            aceptacion
+                                    .getVersionTextoDeclaracionJurada(),
+
+                            aceptacion
+                                    .getVersionTextoTratamientoDatos(),
+
+                            aceptacion
+                                    .getReferenciaPoliticaPrivacidad()
+                    );
+        }
+
+        return new FormularioVidaRecuperadoResponse(
+
+                titular,
+
+                datosComplementarios,
+
+                conyuge,
+
+                beneficiariosRecuperados,
+
+                aceptacionRecuperada,
+
+                proceso.isBeneficiarioBorradorAbierto()
+        );
+    }
+
+    private boolean existeConyuge(
+            ProcesoVida proceso
+    ) {
+        return !campoVacio(
+                proceso.getCodigoDocumentoConyuge()
+        )
+                || !campoVacio(
+                proceso
+                        .getNumeroDocumentoConyuge()
+        )
+                || !campoVacio(
+                proceso
+                        .getTipoRelacion()
+        );
+    }
+
+    private String construirNombreCompletoTitular(
+            ProcesoVida proceso
+    ) {
+
+        List<String> partes =
+                new ArrayList<>();
+
+        agregarParteNombre(
+                partes,
+                proceso.getApellidoPaternoTitular()
+        );
+
+        agregarParteNombre(
+                partes,
+                proceso.getApellidoMaternoTitular()
+        );
+
+        agregarParteNombre(
+                partes,
+                proceso.getPrimerNombreTitular()
+        );
+
+        agregarParteNombre(
+                partes,
+                proceso.getSegundoNombreTitular()
+        );
+
+        return String.join(
+                " ",
+                partes
+        );
+    }
+
+    private void agregarParteNombre(
+            List<String> partes,
+            String valor
+    ) {
+        if (!campoVacio(valor)) {
+            partes.add(
+                    valor.trim()
             );
         }
     }
 
-    public RecuperarAvanceProcesoResponse recuperarUltimoPorTrabajador(
-            String numeroDocumentoTrabajador
+    private void complementarConExpedienteSiExiste(
+
+            RecuperarAvanceProcesoResponse response,
+
+            String registroInternoProceso
     ) {
-        if (campoVacio(numeroDocumentoTrabajador)) {
-            throw new IllegalArgumentException("El número de documento del trabajador es obligatorio.");
-        }
 
-        List<ExpedienteDigitalResponse> expedientes =
-                expedienteDigitalService.listarPorTrabajador(numeroDocumentoTrabajador);
+        try {
 
-        if (expedientes == null || expedientes.isEmpty()) {
-            return construirResponseSinExpediente(
-                    null,
-                    numeroDocumentoTrabajador,
-                    "No se encontró un proceso de afiliación digital en curso para el trabajador."
+            ExpedienteDigitalResponse expediente =
+                    expedienteDigitalService
+                            .obtenerPorRegistroInternoProceso(
+                                    registroInternoProceso
+                            );
+
+            response.setExpedienteEncontrado(
+                    true
+            );
+
+            response.setCanalAcceso(
+                    expediente.getCanalAcceso()
+            );
+
+            response.setEstadoActual(
+                    expediente.getEstadoActual()
+            );
+
+            response.setFechaHoraCreacion(
+                    expediente
+                            .getFechaHoraCreacion()
+            );
+
+            response
+                    .setFechaHoraUltimaActualizacion(
+                            expediente
+                                    .getFechaHoraUltimaActualizacion()
+                    );
+
+            response.setCantidadEventos(
+                    expediente.getCantidadEventos()
+            );
+
+            response.setDocumentosGenerados(
+                    copiarLista(
+                            expediente
+                                    .getDocumentosGenerados()
+                    )
+            );
+
+            response.setDocumentosCargados(
+                    copiarLista(
+                            expediente
+                                    .getDocumentosCargados()
+                    )
+            );
+
+            response.setDocumentosSellados(
+                    copiarLista(
+                            expediente
+                                    .getDocumentosSellados()
+                    )
+            );
+
+            response.setDocumentosPublicados(
+                    copiarLista(
+                            expediente
+                                    .getDocumentosPublicados()
+                    )
+            );
+
+            response.setRechazosDocumentales(
+                    copiarLista(
+                            expediente
+                                    .getRechazosDocumentales()
+                    )
+            );
+
+            response.setUrlsDocumentosPublicados(
+                    construirUrlsDocumentosPublicados(
+                            expediente
+                                    .getDocumentosPublicados()
+                    )
+            );
+
+            aplicarDecisionDeReanudacion(
+                    response
+            );
+
+        } catch (IllegalArgumentException e) {
+
+            /*
+             * No existe ExpedienteDigital en memoria.
+             *
+             * Esto NO invalida el proceso recuperado
+             * desde Oracle.
+             */
+            response.setExpedienteEncontrado(
+                    false
+            );
+
+            response.setCantidadEventos(
+                    0
             );
         }
+    }
 
-        return construirResponseDesdeExpediente(expedientes.get(0));
+    private RecuperarAvanceProcesoResponse
+    construirResponseSinProcesoOracle(
+            String registroInternoProceso
+    ) {
+
+        RecuperarAvanceProcesoResponse response =
+                new RecuperarAvanceProcesoResponse();
+
+        response.setProcesoEncontrado(false);
+        response.setExpedienteEncontrado(false);
+
+        response.setMensajeConsulta(
+                "No se encontró un proceso +Vida persistido para el registro interno informado."
+        );
+
+        response.setRegistroInternoProceso(
+                registroInternoProceso
+        );
+
+        response.setEstadoActual(
+                EstadoProcesoConstants.SIN_EXPEDIENTE
+        );
+
+        response.setAccionPendiente(
+                EstadoProcesoConstants
+                        .ACCION_INICIAR_PROCESO
+        );
+
+        response.setAccionFrontendSugerida(
+                EstadoProcesoConstants
+                        .FRONTEND_MOSTRAR_INICIO_AFILIACION
+        );
+
+        response.setMensajeUsuario(
+                "No se encontró un proceso en curso. Puede iniciar la afiliación digital al +Vida Seguro de Accidentes."
+        );
+
+        response.setPuedeContinuarEnModulo(true);
+        response.setPermiteNuevaCargaTrabajador(false);
+        response.setRequiereIntervencionInterna(false);
+        response.setDocumentosDisponiblesParaConsulta(false);
+        response.setCantidadEventos(0);
+
+        return response;
     }
 
     private RecuperarAvanceProcesoResponse construirResponseDesdeExpediente(

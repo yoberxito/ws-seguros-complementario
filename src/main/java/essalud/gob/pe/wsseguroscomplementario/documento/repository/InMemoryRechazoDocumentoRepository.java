@@ -1,7 +1,6 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.repository;
 
 import essalud.gob.pe.wsseguroscomplementario.documento.model.RechazoDocumento;
-import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Repository
 public class InMemoryRechazoDocumentoRepository implements RechazoDocumentoRepository {
 
     private final Map<String, RechazoDocumento> almacenamiento = new ConcurrentHashMap<>();

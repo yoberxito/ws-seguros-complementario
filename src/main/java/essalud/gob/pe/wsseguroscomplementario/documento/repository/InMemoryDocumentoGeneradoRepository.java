@@ -1,7 +1,6 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.repository;
 
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoGenerado;
-import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +9,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-@Repository
 public class InMemoryDocumentoGeneradoRepository implements DocumentoGeneradoRepository {
 
     private final Map<String, DocumentoGenerado> almacenamiento = new ConcurrentHashMap<>();
@@ -24,6 +22,24 @@ public class InMemoryDocumentoGeneradoRepository implements DocumentoGeneradoRep
     @Override
     public Optional<DocumentoGenerado> buscarPorId(String idDocumentoGenerado) {
         return Optional.ofNullable(almacenamiento.get(idDocumentoGenerado));
+    }
+
+    @Override
+    public Optional<DocumentoGenerado> buscarPorRegistroInternoProcesoYTipoDocumento(
+            String registroInternoProceso,
+            String tipoDocumento
+    ) {
+        return almacenamiento.values()
+                .stream()
+                .filter(documento ->
+                        documento.getRegistroInternoProceso()
+                                .equalsIgnoreCase(registroInternoProceso)
+                )
+                .filter(documento ->
+                        documento.getTipoDocumento()
+                                .equalsIgnoreCase(tipoDocumento)
+                )
+                .findFirst();
     }
 
     @Override

@@ -37,22 +37,47 @@ public class ReanudacionProcesoController {
         }
     }
 
-    @GetMapping("/trabajador/{numeroDocumentoTrabajador}/ultimo")
-    public ResponseEntity<ApiResponse<RecuperarAvanceProcesoResponse>> recuperarUltimoPorTrabajador(
-            @PathVariable String numeroDocumentoTrabajador
+    @GetMapping(
+            "/trabajador/{tipoDocumentoTrabajador}/{numeroDocumentoTrabajador}/ultimo"
+    )
+    public ResponseEntity<
+            ApiResponse<RecuperarAvanceProcesoResponse>
+            >
+    recuperarUltimoPorTrabajador(
+
+            @PathVariable
+            String tipoDocumentoTrabajador,
+
+            @PathVariable
+            String numeroDocumentoTrabajador
     ) {
+
         try {
+
             RecuperarAvanceProcesoResponse response =
-                    reanudacionProcesoService.recuperarUltimoPorTrabajador(numeroDocumentoTrabajador);
+                    reanudacionProcesoService
+                            .recuperarUltimoPorTrabajador(
+                                    tipoDocumentoTrabajador,
+                                    numeroDocumentoTrabajador
+                            );
 
             return ResponseEntity.ok(
-                    ApiResponse.exito(response.getMensajeConsulta(), response)
+                    ApiResponse.exito(
+                            response.getMensajeConsulta(),
+                            response
+                    )
             );
 
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(
-                    ApiResponse.error(e.getMessage(), null)
-            );
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    e.getMessage(),
+                                    null
+                            )
+                    );
         }
     }
 }

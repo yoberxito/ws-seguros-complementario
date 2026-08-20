@@ -1,10 +1,10 @@
 package essalud.gob.pe.wsseguroscomplementario.incidencia.service;
 
 import essalud.gob.pe.wsseguroscomplementario.common.constants.EstadoProcesoConstants;
-import essalud.gob.pe.wsseguroscomplementario.expediente.dto.RegistrarAvanceExpedienteRequest;
-import essalud.gob.pe.wsseguroscomplementario.expediente.service.ExpedienteDigitalService;
 import essalud.gob.pe.wsseguroscomplementario.incidencia.dto.CerrarIncidenciaOperativaRequest;
 import essalud.gob.pe.wsseguroscomplementario.incidencia.dto.IncidenciaOperativaResponse;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.Optional;
 import essalud.gob.pe.wsseguroscomplementario.incidencia.dto.RegistrarIncidenciaOperativaRequest;
 import essalud.gob.pe.wsseguroscomplementario.incidencia.dto.RegistrarReintentoIncidenciaRequest;
 import essalud.gob.pe.wsseguroscomplementario.incidencia.dto.ReintentoIncidenciaResponse;
@@ -27,16 +27,14 @@ public class IncidenciaOperativaService {
             ZoneId.of(EstadoProcesoConstants.ZONA_HORARIA_LIMA);
 
     private final IncidenciaOperativaRepository incidenciaOperativaRepository;
-    private final ExpedienteDigitalService expedienteDigitalService;
 
     public IncidenciaOperativaService(
-            IncidenciaOperativaRepository incidenciaOperativaRepository,
-            ExpedienteDigitalService expedienteDigitalService
+            IncidenciaOperativaRepository incidenciaOperativaRepository
     ) {
-        this.incidenciaOperativaRepository = incidenciaOperativaRepository;
-        this.expedienteDigitalService = expedienteDigitalService;
+        this.incidenciaOperativaRepository =
+                incidenciaOperativaRepository;
     }
-
+    @Transactional
     public IncidenciaOperativaResponse registrarObservadoOperativo(
             RegistrarIncidenciaOperativaRequest request
     ) {
@@ -86,86 +84,254 @@ public class IncidenciaOperativaService {
         incidencia.setDatosSesionDispositivo(request.getDatosSesionDispositivo());
 
         incidenciaOperativaRepository.guardar(incidencia);
-
-        registrarAvanceEnExpediente(
-                incidencia,
-                EstadoProcesoConstants.OBSERVADO_OPERATIVO,
-                "Se registró incidencia operativa posterior a la validación documental: "
-                        + incidencia.getMotivoObservado()
-        );
-
+        incidenciaOperativaRepository
+                .registrarEventoIncidencia(
+                        incidencia.getIdIncidenciaOperativa(),
+                        "HIST-"
+                                + incidencia
+                                .getIdIncidenciaOperativa(),
+                        EVENTO_INCIDENCIA_REGISTRADA,
+                        null,
+                        EstadoProcesoConstants
+                                .OBSERVADO_OPERATIVO,
+                        "OBSERVADO",
+                        incidencia.getMotivoObservado(),
+                        incidencia.getUsuarioResponsable(),
+                        incidencia.getIpOrigen(),
+                        incidencia.getDatosSesionDispositivo(),
+                        incidencia.getIdDocumentoSellado(),
+                        incidencia.getIdDocumentoPublicado(),
+                        fechaHoraRegistro
+                );
         return convertirAResponse(
-                incidencia,
+                obtenerIncidencia(
+                        incidencia
+                                .getIdIncidenciaOperativa()
+                ),
                 "Incidencia operativa registrada correctamente como OBSERVADO."
         );
     }
-
+    @Transactional
     public IncidenciaOperativaResponse registrarReintentoInterno(
             String idIncidenciaOperativa,
             RegistrarReintentoIncidenciaRequest request
     ) {
-        validarReintento(idIncidenciaOperativa, request);
+        validarReintento(
+                idIncidenciaOperativa,
+                request
+        );
 
-        IncidenciaOperativa incidencia = obtenerIncidencia(idIncidenciaOperativa);
+        IncidenciaOperativa incidencia =
+                obtenerIncidencia(
+                        idIncidenciaOperativa
+                );
 
-        if (sonIguales(incidencia.getEstadoIncidencia(), EstadoProcesoConstants.SUBSANADO_OPERATIVAMENTE)) {
-            throw new IllegalArgumentException("La incidencia operativa ya se encuentra cerrada o subsanada.");
+        /*
+         * Una incidencia ya subsanada no debe admitir
+         * nuevos reintentos.
+         */
+        if (
+                sonIguales(
+                        incidencia.getEstadoIncidencia(),
+                        EstadoProcesoConstants
+                                .SUBSANADO_OPERATIVAMENTE
+                )
+        ) {
+            throw new IllegalArgumentException(
+                    "La incidencia operativa ya se encuentra cerrada o subsanada."
+            );
         }
 
-        LocalDateTime fechaHoraReintento = LocalDateTime.now(ZONA_HORARIA_LIMA);
+        /*
+         * Conservamos el estado existente antes
+         * de actualizarlo para registrarlo en
+         * HISTORIAL_PROC_REGMASVIDA.
+         */
+        String estadoAnterior =
+                incidencia.getEstadoIncidencia();
 
-        ReintentoIncidenciaOperativa reintento = new ReintentoIncidenciaOperativa();
+        LocalDateTime fechaHoraReintento =
+                LocalDateTime.now(
+                        ZONA_HORARIA_LIMA
+                );
 
-        reintento.setIdReintento(generarIdReintento());
-        reintento.setFechaHoraReintento(fechaHoraReintento);
-        reintento.setDescripcionReintento(request.getDescripcionReintento());
-        reintento.setResultadoReintento(request.getResultadoReintento());
+        ReintentoIncidenciaOperativa reintento =
+                new ReintentoIncidenciaOperativa();
+
+        reintento.setIdReintento(
+                generarIdReintento()
+        );
+
+        reintento.setFechaHoraReintento(
+                fechaHoraReintento
+        );
+
+        reintento.setDescripcionReintento(
+                request.getDescripcionReintento()
+        );
+
+        reintento.setResultadoReintento(
+                request.getResultadoReintento()
+        );
+
         reintento.setUsuarioResponsable(
-                valorPorDefecto(request.getUsuarioResponsable(), EstadoProcesoConstants.USUARIO_SISTEMA)
-        );
-        reintento.setIpOrigen(request.getIpOrigen());
-        reintento.setDatosSesionDispositivo(request.getDatosSesionDispositivo());
-        reintento.setIdDocumentoSellado(request.getIdDocumentoSellado());
-        reintento.setIdDocumentoPublicado(request.getIdDocumentoPublicado());
-
-        incidencia.getReintentos().add(reintento);
-        incidencia.setNumeroReintentosInternos(incidencia.getNumeroReintentosInternos() + 1);
-        incidencia.setFechaHoraUltimoReintento(fechaHoraReintento);
-        incidencia.setEstadoIncidencia(EstadoProcesoConstants.REINTENTO_INTERNO_REGISTRADO);
-        incidencia.setRequiereIntervencionInterna(true);
-        incidencia.setPermiteNuevaCargaTrabajador(false);
-
-        if (!campoVacio(request.getIdDocumentoSellado())) {
-            incidencia.setIdDocumentoSellado(request.getIdDocumentoSellado());
-        }
-
-        if (!campoVacio(request.getIdDocumentoPublicado())) {
-            incidencia.setIdDocumentoPublicado(request.getIdDocumentoPublicado());
-        }
-
-        incidenciaOperativaRepository.guardar(incidencia);
-
-        registrarAvanceEnExpediente(
-                incidencia,
-                EstadoProcesoConstants.REINTENTO_INTERNO_REGISTRADO,
-                "Se registró reintento interno para subsanar incidencia operativa."
+                valorPorDefecto(
+                        request.getUsuarioResponsable(),
+                        EstadoProcesoConstants
+                                .USUARIO_SISTEMA
+                )
         );
 
+        reintento.setIpOrigen(
+                request.getIpOrigen()
+        );
+
+        reintento.setDatosSesionDispositivo(
+                request.getDatosSesionDispositivo()
+        );
+
+        reintento.setIdDocumentoSellado(
+                request.getIdDocumentoSellado()
+        );
+
+        reintento.setIdDocumentoPublicado(
+                request.getIdDocumentoPublicado()
+        );
+
+        incidencia
+                .getReintentos()
+                .add(
+                        reintento
+                );
+
+        incidencia.setNumeroReintentosInternos(
+                incidencia.getNumeroReintentosInternos()
+                        + 1
+        );
+
+        incidencia.setFechaHoraUltimoReintento(
+                fechaHoraReintento
+        );
+
+        incidencia.setEstadoIncidencia(
+                EstadoProcesoConstants
+                        .REINTENTO_INTERNO_REGISTRADO
+        );
+
+        incidencia.setObservadoOperativo(
+                true
+        );
+
+        incidencia.setRequiereIntervencionInterna(
+                true
+        );
+
+        incidencia.setPermiteNuevaCargaTrabajador(
+                false
+        );
+
+        if (
+                !campoVacio(
+                        request.getIdDocumentoSellado()
+                )
+        ) {
+            incidencia.setIdDocumentoSellado(
+                    request.getIdDocumentoSellado()
+            );
+        }
+
+        if (
+                !campoVacio(
+                        request.getIdDocumentoPublicado()
+                )
+        ) {
+            incidencia.setIdDocumentoPublicado(
+                    request.getIdDocumentoPublicado()
+            );
+        }
+
+        incidenciaOperativaRepository
+                .guardar(
+                        incidencia
+                );
+
+        incidenciaOperativaRepository
+                .registrarEventoIncidencia(
+                        incidencia.getIdIncidenciaOperativa(),
+
+                        "HIST-"
+                                + reintento.getIdReintento(),
+
+                        EVENTO_REINTENTO,
+
+                        estadoAnterior,
+
+                        EstadoProcesoConstants
+                                .REINTENTO_INTERNO_REGISTRADO,
+
+                        request.getResultadoReintento(),
+
+                        request.getDescripcionReintento(),
+
+                        reintento.getUsuarioResponsable(),
+
+                        reintento.getIpOrigen(),
+
+                        reintento.getDatosSesionDispositivo(),
+
+                        reintento.getIdDocumentoSellado(),
+
+                        reintento.getIdDocumentoPublicado(),
+
+                        fechaHoraReintento
+                );
+
+        /*
+         * Volvemos a leer desde Oracle para que
+         * la respuesta use la información durable,
+         * incluida la lista histórica de reintentos.
+         */
         return convertirAResponse(
-                incidencia,
+                obtenerIncidencia(
+                        incidencia
+                                .getIdIncidenciaOperativa()
+                ),
                 "Reintento interno registrado correctamente."
         );
     }
 
+    @Transactional
     public IncidenciaOperativaResponse cerrarIncidencia(
             String idIncidenciaOperativa,
             CerrarIncidenciaOperativaRequest request
     ) {
         validarCierre(idIncidenciaOperativa, request);
 
-        IncidenciaOperativa incidencia = obtenerIncidencia(idIncidenciaOperativa);
+        IncidenciaOperativa incidencia =
+                obtenerIncidencia(idIncidenciaOperativa);
 
-        LocalDateTime fechaHoraCierre = LocalDateTime.now(ZONA_HORARIA_LIMA);
+        /*
+         * Si ya fue subsanada, no volvemos a cerrarla
+         * ni generamos otro evento de cierre.
+         */
+        if (
+                sonIguales(
+                        incidencia.getEstadoIncidencia(),
+                        EstadoProcesoConstants
+                                .SUBSANADO_OPERATIVAMENTE
+                )
+        ) {
+            return convertirAResponse(
+                    incidencia,
+                    "La incidencia operativa ya se encontraba subsanada."
+            );
+        }
+
+        String estadoAnterior =
+                incidencia.getEstadoIncidencia();
+
+        LocalDateTime fechaHoraCierre =
+                LocalDateTime.now(ZONA_HORARIA_LIMA);
 
         incidencia.setEstadoIncidencia(EstadoProcesoConstants.SUBSANADO_OPERATIVAMENTE);
         incidencia.setObservadoOperativo(false);
@@ -192,16 +358,188 @@ public class IncidenciaOperativaService {
 
         incidenciaOperativaRepository.guardar(incidencia);
 
-        registrarAvanceEnExpediente(
-                incidencia,
-                EstadoProcesoConstants.SUBSANADO_OPERATIVAMENTE,
-                "Se cerró la incidencia operativa: " + incidencia.getResultadoCierre()
-        );
+
+        incidenciaOperativaRepository
+                .registrarEventoIncidencia(
+                        incidencia.getIdIncidenciaOperativa(),
+                        "HIST-CIERRE-"
+                                + UUID.randomUUID(),
+                        EVENTO_INCIDENCIA_SUBSANADA,
+                        estadoAnterior,
+                        EstadoProcesoConstants
+                                .SUBSANADO_OPERATIVAMENTE,
+                        "SUBSANADO",
+                        incidencia.getResultadoCierre(),
+                        incidencia.getUsuarioResponsable(),
+                        incidencia.getIpOrigen(),
+                        incidencia.getDatosSesionDispositivo(),
+                        incidencia.getIdDocumentoSellado(),
+                        incidencia.getIdDocumentoPublicado(),
+                        fechaHoraCierre
+                );
 
         return convertirAResponse(
-                incidencia,
+                obtenerIncidencia(
+                        incidencia
+                                .getIdIncidenciaOperativa()
+                ),
                 "Incidencia operativa cerrada correctamente."
         );
+    }
+
+    @Transactional
+    public IncidenciaOperativaResponse
+    registrarOReintentarObservadoOperativo(
+            RegistrarIncidenciaOperativaRequest request
+    ) {
+
+        validarRegistroIncidencia(
+                request
+        );
+
+        Optional<IncidenciaOperativa> existente =
+                buscarIncidenciaAbiertaDuplicada(
+                        request
+                );
+
+        if (existente.isEmpty()) {
+            return registrarObservadoOperativo(
+                    request
+            );
+        }
+
+        RegistrarReintentoIncidenciaRequest reintento =
+                new RegistrarReintentoIncidenciaRequest();
+
+        String detalle =
+                campoVacio(
+                        request.getDetalleIncidencia()
+                )
+                        ? ""
+                        : " Detalle: "
+                          + request.getDetalleIncidencia();
+
+        reintento.setDescripcionReintento(
+                "Reintento automático de la operación. "
+                        + request.getMotivoObservado()
+                        + detalle
+        );
+
+        reintento.setResultadoReintento(
+                "FALLIDO"
+        );
+
+        reintento.setUsuarioResponsable(
+                request.getUsuarioResponsable()
+        );
+
+        reintento.setIpOrigen(
+                request.getIpOrigen()
+        );
+
+        reintento.setDatosSesionDispositivo(
+                request.getDatosSesionDispositivo()
+        );
+
+        reintento.setIdDocumentoSellado(
+                request.getIdDocumentoSellado()
+        );
+
+        reintento.setIdDocumentoPublicado(
+                request.getIdDocumentoPublicado()
+        );
+
+        return registrarReintentoInterno(
+                existente
+                        .get()
+                        .getIdIncidenciaOperativa(),
+                reintento
+        );
+    }
+
+    @Transactional
+    public void cerrarIncidenciasAbiertasPorSistema(
+            String registroInternoProceso,
+            String numeroDocumentoTrabajador,
+            String tipoDocumentoProceso,
+            String sistemaInvolucrado,
+            String resultadoCierre,
+            String usuarioResponsable,
+            String ipOrigen,
+            String datosSesionDispositivo,
+            String idDocumentoSellado,
+            String idDocumentoPublicado
+    ) {
+
+        List<IncidenciaOperativa> incidencias =
+                incidenciaOperativaRepository
+                        .buscarPorProcesoYTrabajador(
+                                registroInternoProceso,
+                                numeroDocumentoTrabajador
+                        );
+
+        for (
+                IncidenciaOperativa incidencia
+                : incidencias
+        ) {
+
+            if (!esIncidenciaAbierta(incidencia)) {
+                continue;
+            }
+
+            if (
+                    !sonIguales(
+                            incidencia
+                                    .getTipoDocumentoProceso(),
+                            tipoDocumentoProceso
+                    )
+            ) {
+                continue;
+            }
+
+            if (
+                    !sonIguales(
+                            incidencia
+                                    .getSistemaInvolucrado(),
+                            sistemaInvolucrado
+                    )
+            ) {
+                continue;
+            }
+
+            CerrarIncidenciaOperativaRequest request =
+                    new CerrarIncidenciaOperativaRequest();
+
+            request.setResultadoCierre(
+                    resultadoCierre
+            );
+
+            request.setUsuarioResponsable(
+                    usuarioResponsable
+            );
+
+            request.setIpOrigen(
+                    ipOrigen
+            );
+
+            request.setDatosSesionDispositivo(
+                    datosSesionDispositivo
+            );
+
+            request.setIdDocumentoSellado(
+                    idDocumentoSellado
+            );
+
+            request.setIdDocumentoPublicado(
+                    idDocumentoPublicado
+            );
+
+            cerrarIncidencia(
+                    incidencia
+                            .getIdIncidenciaOperativa(),
+                    request
+            );
+        }
     }
 
     public List<IncidenciaOperativaResponse> listarPorProcesoYTrabajador(
@@ -232,25 +570,22 @@ public class IncidenciaOperativaService {
     private void validarNoExisteIncidenciaAbiertaDuplicada(
             RegistrarIncidenciaOperativaRequest request
     ) {
-        List<IncidenciaOperativa> incidenciasDelProceso =
-                incidenciaOperativaRepository.buscarPorProcesoYTrabajador(
-                        request.getRegistroInternoProceso(),
-                        request.getNumeroDocumentoTrabajador()
+
+        Optional<IncidenciaOperativa> existente =
+                buscarIncidenciaAbiertaDuplicada(
+                        request
                 );
 
-        for (IncidenciaOperativa incidencia : incidenciasDelProceso) {
-            if (esIncidenciaAbierta(incidencia)
-                    && sonIguales(incidencia.getTipoDocumentoProceso(), request.getTipoDocumentoProceso())
-                    && sonIguales(incidencia.getSistemaInvolucrado(), request.getSistemaInvolucrado())
-                    && sonIguales(incidencia.getEtapaProceso(), request.getEtapaProceso())
-                    && sonIguales(incidencia.getTipoIncidenciaOperativa(), request.getTipoIncidenciaOperativa())) {
-
-                throw new IllegalStateException(
-                        "Ya existe una incidencia operativa abierta para el mismo proceso, documento, sistema, etapa y tipo de incidencia. "
-                                + "Debe atenderse la incidencia existente antes de registrar una nueva. "
-                                + "ID incidencia existente: " + incidencia.getIdIncidenciaOperativa()
-                );
-            }
+        if (existente.isPresent()) {
+            throw new IllegalStateException(
+                    "Ya existe una incidencia operativa abierta "
+                            + "para el mismo proceso, documento, "
+                            + "sistema, etapa y tipo de incidencia. "
+                            + "ID incidencia existente: "
+                            + existente
+                            .get()
+                            .getIdIncidenciaOperativa()
+            );
         }
     }
 
@@ -259,30 +594,55 @@ public class IncidenciaOperativaService {
                 || sonIguales(incidencia.getEstadoIncidencia(), EstadoProcesoConstants.REINTENTO_INTERNO_REGISTRADO);
     }
 
-    private void registrarAvanceEnExpediente(
-            IncidenciaOperativa incidencia,
-            String estadoOperativo,
-            String descripcionAvance
+    private Optional<IncidenciaOperativa>
+    buscarIncidenciaAbiertaDuplicada(
+            RegistrarIncidenciaOperativaRequest request
     ) {
-        RegistrarAvanceExpedienteRequest request = new RegistrarAvanceExpedienteRequest();
 
-        request.setRegistroInternoProceso(incidencia.getRegistroInternoProceso());
-        request.setTipoDocumentoTrabajador(incidencia.getTipoDocumentoTrabajador());
-        request.setNumeroDocumentoTrabajador(incidencia.getNumeroDocumentoTrabajador());
-        request.setCanalAcceso(EstadoProcesoConstants.CANAL_SOMOS_ESSALUD);
-        request.setEstadoOperativo(estadoOperativo);
-        request.setDescripcionAvance(descripcionAvance);
-        request.setUsuarioAutenticado(incidencia.getUsuarioResponsable());
-        request.setIpOrigen(incidencia.getIpOrigen());
-        request.setDatosSesionDispositivo(incidencia.getDatosSesionDispositivo());
-        request.setTipoDocumentoProceso(incidencia.getTipoDocumentoProceso());
-
-        request.setIdDocumentoGenerado(incidencia.getIdDocumentoGenerado());
-        request.setIdDocumentoCargado(incidencia.getIdDocumentoCargado());
-        request.setIdDocumentoSellado(incidencia.getIdDocumentoSellado());
-        request.setIdDocumentoPublicado(incidencia.getIdDocumentoPublicado());
-
-        expedienteDigitalService.registrarAvance(request);
+        return incidenciaOperativaRepository
+                .buscarPorProcesoYTrabajador(
+                        request.getRegistroInternoProceso(),
+                        request.getNumeroDocumentoTrabajador()
+                )
+                .stream()
+                .filter(this::esIncidenciaAbierta)
+                .filter(
+                        incidencia ->
+                                sonIguales(
+                                        incidencia
+                                                .getTipoDocumentoProceso(),
+                                        request
+                                                .getTipoDocumentoProceso()
+                                )
+                )
+                .filter(
+                        incidencia ->
+                                sonIguales(
+                                        incidencia
+                                                .getSistemaInvolucrado(),
+                                        request
+                                                .getSistemaInvolucrado()
+                                )
+                )
+                .filter(
+                        incidencia ->
+                                sonIguales(
+                                        incidencia
+                                                .getEtapaProceso(),
+                                        request
+                                                .getEtapaProceso()
+                                )
+                )
+                .filter(
+                        incidencia ->
+                                sonIguales(
+                                        incidencia
+                                                .getTipoIncidenciaOperativa(),
+                                        request
+                                                .getTipoIncidenciaOperativa()
+                                )
+                )
+                .findFirst();
     }
 
     private IncidenciaOperativa obtenerIncidencia(String idIncidenciaOperativa) {
@@ -395,6 +755,18 @@ public class IncidenciaOperativaService {
             throw new IllegalArgumentException("El motivo observado es obligatorio.");
         }
     }
+
+    private static final String
+            EVENTO_INCIDENCIA_REGISTRADA =
+            "INCIDENCIA_OPERATIVA_REGISTRADA";
+
+    private static final String
+            EVENTO_REINTENTO =
+            "REINTENTO_INCIDENCIA_OPERATIVA";
+
+    private static final String
+            EVENTO_INCIDENCIA_SUBSANADA =
+            "INCIDENCIA_OPERATIVA_SUBSANADA";
 
     private void validarReintento(
             String idIncidenciaOperativa,

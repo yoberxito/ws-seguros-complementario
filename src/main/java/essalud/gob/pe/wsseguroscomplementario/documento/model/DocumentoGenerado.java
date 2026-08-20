@@ -31,8 +31,6 @@ public class DocumentoGenerado {
 
     private List<PaginaDocumentoGenerado> paginasEsperadas = new ArrayList<>();
 
-    private byte[] contenidoArchivoOriginal;
-
     public DocumentoGenerado() {
     }
 
@@ -170,13 +168,5 @@ public class DocumentoGenerado {
 
     public void setPaginasEsperadas(List<PaginaDocumentoGenerado> paginasEsperadas) {
         this.paginasEsperadas = paginasEsperadas;
-    }
-
-    public byte[] getContenidoArchivoOriginal() {
-        return contenidoArchivoOriginal;
-    }
-
-    public void setContenidoArchivoOriginal(byte[] contenidoArchivoOriginal) {
-        this.contenidoArchivoOriginal = contenidoArchivoOriginal;
     }
 }

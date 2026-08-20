@@ -11,5 +11,9 @@ public interface AceptacionRepository {
 
     Optional<AceptacionLegal> buscarPorId(String idAceptacion);
 
+    Optional<AceptacionLegal> buscarPorRegistroInternoProceso(
+            String registroInternoProceso
+    );
+
     List<AceptacionLegal> listar();
 }

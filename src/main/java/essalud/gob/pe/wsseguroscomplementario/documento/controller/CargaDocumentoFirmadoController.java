@@ -48,9 +48,23 @@ public class CargaDocumentoFirmadoController {
             CargarDocumentoFirmadoResponse response =
                     cargaDocumentoFirmadoService.cargarDocumentoFirmado(request, archivo, ipOrigen);
 
+            /*
+             * Un rechazo técnico del PDF es un resultado
+             * funcional válido de la operación.
+             *
+             * El archivo no fue aceptado, pero el backend
+             * pudo procesar correctamente la solicitud,
+             * registrar el rechazo y devolver el motivo.
+             *
+             * Por eso se responde HTTP 200 conservando
+             * codResultado = "0" y el body del rechazo.
+             */
             if (!response.isCargado()) {
-                return ResponseEntity.badRequest().body(
-                        ApiResponse.error(response.getMensajeCarga(), response)
+                return ResponseEntity.ok(
+                        ApiResponse.error(
+                                response.getMensajeCarga(),
+                                response
+                        )
                 );
             }
 

@@ -4,10 +4,6 @@ import essalud.gob.pe.wsseguroscomplementario.common.dto.ApiResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.RegistrarDocumentoGeneradoRequest;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.RegistrarDocumentoGeneradoResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.service.RegistroDocumentoGeneradoService;
-import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoGenerado;
-import org.springframework.http.HttpHeaders;
-
-import java.nio.charset.StandardCharsets;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -107,29 +103,6 @@ public class RegistroDocumentoGeneradoController {
         return ResponseEntity.ok(
                 ApiResponse.exito("Consulta de documentos generados por proceso realizada correctamente.", response)
         );
-    }
-
-    @GetMapping("/{idDocumentoGenerado}/archivo")
-    public ResponseEntity<byte[]> visualizarArchivoDocumentoGenerado(
-            @PathVariable String idDocumentoGenerado
-    ) {
-        try {
-            DocumentoGenerado documentoGenerado =
-                    registroDocumentoGeneradoService.obtenerDocumentoGenerado(idDocumentoGenerado);
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .header(
-                            HttpHeaders.CONTENT_DISPOSITION,
-                            "inline; filename=\"" + documentoGenerado.getNombreArchivoOriginal() + "\""
-                    )
-                    .body(documentoGenerado.getContenidoArchivoOriginal());
-
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getMessage().getBytes(StandardCharsets.UTF_8));
-        }
     }
 
 }

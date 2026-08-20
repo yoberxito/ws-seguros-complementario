@@ -8,7 +8,7 @@ public class RechazoDocumento {
 
     private String idRechazoDocumental;
     private String registroInternoProceso;
-
+    private String idDocumentoCargado;
     private String tipoDocumento;
     private String tipoDocumentoTrabajador;
     private String numeroDocumentoTrabajador;
@@ -148,5 +148,16 @@ public class RechazoDocumento {
 
     public void setDatosSesionDispositivo(String datosSesionDispositivo) {
         this.datosSesionDispositivo = datosSesionDispositivo;
+    }
+
+    public String getIdDocumentoCargado() {
+        return idDocumentoCargado;
+    }
+
+    public void setIdDocumentoCargado(
+            String idDocumentoCargado
+    ) {
+        this.idDocumentoCargado =
+                idDocumentoCargado;
     }
 }

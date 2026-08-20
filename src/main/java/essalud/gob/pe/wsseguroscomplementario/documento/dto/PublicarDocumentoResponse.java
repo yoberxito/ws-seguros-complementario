@@ -22,6 +22,7 @@ public class PublicarDocumentoResponse {
     private String numeroDocumentoTrabajador;
 
     private String nombreArchivo;
+    private String rutaArchivo;
     private String contentType;
     private String hashSha256DocumentoPublicado;
 
@@ -186,5 +187,16 @@ public class PublicarDocumentoResponse {
 
     public void setObservaciones(List<String> observaciones) {
         this.observaciones = observaciones;
+    }
+
+    public String getRutaArchivo() {
+        return rutaArchivo;
+    }
+
+    public void setRutaArchivo(
+            String rutaArchivo
+    ) {
+        this.rutaArchivo =
+                rutaArchivo;
     }
 }

@@ -8,7 +8,19 @@ public class RecuperarAvanceProcesoResponse {
 
     private boolean expedienteEncontrado;
     private String mensajeConsulta;
+    private boolean procesoEncontrado;
 
+    private String codigoEstadoProceso;
+    private String rutaFrontend;
+    private String estadoOperativo;
+    private String tipoFlujo;
+    private String codigoEstadoNavegacion;
+    private String rutaFrontendNavegacion;
+    private LocalDateTime fechaRegistroProceso;
+    private LocalDateTime fechaActualizacionProceso;
+
+    private FormularioVidaRecuperadoResponse
+            formularioVida;
     private String registroInternoProceso;
     private String tipoDocumentoTrabajador;
     private String numeroDocumentoTrabajador;
@@ -20,6 +32,7 @@ public class RecuperarAvanceProcesoResponse {
     private String accionPendiente;
     private String accionFrontendSugerida;
     private String mensajeUsuario;
+
 
     private boolean puedeContinuarEnModulo;
     private boolean permiteNuevaCargaTrabajador;
@@ -233,4 +246,118 @@ public class RecuperarAvanceProcesoResponse {
     public void setUrlsDocumentosPublicados(List<String> urlsDocumentosPublicados) {
         this.urlsDocumentosPublicados = urlsDocumentosPublicados;
     }
+    public boolean isProcesoEncontrado() {
+        return procesoEncontrado;
+    }
+
+    public void setProcesoEncontrado(
+            boolean procesoEncontrado
+    ) {
+        this.procesoEncontrado =
+                procesoEncontrado;
+    }
+
+    public String getCodigoEstadoProceso() {
+        return codigoEstadoProceso;
+    }
+
+    public void setCodigoEstadoProceso(
+            String codigoEstadoProceso
+    ) {
+        this.codigoEstadoProceso =
+                codigoEstadoProceso;
+    }
+
+    public String getRutaFrontend() {
+        return rutaFrontend;
+    }
+
+    public void setRutaFrontend(
+            String rutaFrontend
+    ) {
+        this.rutaFrontend =
+                rutaFrontend;
+    }
+
+    public String getCodigoEstadoNavegacion() {
+        return codigoEstadoNavegacion;
+    }
+
+    public void setCodigoEstadoNavegacion(
+            String codigoEstadoNavegacion
+    ) {
+        this.codigoEstadoNavegacion =
+                codigoEstadoNavegacion;
+    }
+
+    public String getRutaFrontendNavegacion() {
+        return rutaFrontendNavegacion;
+    }
+
+    public void setRutaFrontendNavegacion(
+            String rutaFrontendNavegacion
+    ) {
+        this.rutaFrontendNavegacion =
+                rutaFrontendNavegacion;
+    }
+
+    public String getEstadoOperativo() {
+        return estadoOperativo;
+    }
+
+    public void setEstadoOperativo(
+            String estadoOperativo
+    ) {
+        this.estadoOperativo =
+                estadoOperativo;
+    }
+
+    public String getTipoFlujo() {
+        return tipoFlujo;
+    }
+
+    public void setTipoFlujo(
+            String tipoFlujo
+    ) {
+        this.tipoFlujo =
+                tipoFlujo;
+    }
+
+    public LocalDateTime getFechaRegistroProceso() {
+        return fechaRegistroProceso;
+    }
+
+    public void setFechaRegistroProceso(
+            LocalDateTime fechaRegistroProceso
+    ) {
+        this.fechaRegistroProceso =
+                fechaRegistroProceso;
+    }
+
+    public LocalDateTime
+    getFechaActualizacionProceso() {
+        return fechaActualizacionProceso;
+    }
+
+    public void setFechaActualizacionProceso(
+            LocalDateTime fechaActualizacionProceso
+    ) {
+        this.fechaActualizacionProceso =
+                fechaActualizacionProceso;
+    }
+
+    public FormularioVidaRecuperadoResponse
+    getFormularioVida() {
+        return formularioVida;
+    }
+
+    public void setFormularioVida(
+            FormularioVidaRecuperadoResponse
+                    formularioVida
+    ) {
+        this.formularioVida =
+                formularioVida;
+    }
+
+
 }

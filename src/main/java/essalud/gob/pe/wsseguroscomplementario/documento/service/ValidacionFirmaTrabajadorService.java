@@ -153,8 +153,9 @@ public class ValidacionFirmaTrabajadorService {
         if ("AUTORIZACION_DESCUENTO".equalsIgnoreCase(tipoDocumento)) {
             // Zona estimada para firma del trabajador en la Autorización de Descuento.
             // Probablemente la ajustemos visualmente cuando probemos con el PDF firmado.
-            return new ZonaFirma(70, 424, 133, 107);
+            return new ZonaFirma(71, 428, 133, 110);
         }
+
 
         return new ZonaFirma(92, 66, 135, 86);
     }

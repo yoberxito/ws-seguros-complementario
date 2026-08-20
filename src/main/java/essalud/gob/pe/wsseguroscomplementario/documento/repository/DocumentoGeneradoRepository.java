@@ -11,7 +11,14 @@ public interface DocumentoGeneradoRepository {
 
     Optional<DocumentoGenerado> buscarPorId(String idDocumentoGenerado);
 
+
+    Optional<DocumentoGenerado> buscarPorRegistroInternoProcesoYTipoDocumento(
+            String registroInternoProceso,
+            String tipoDocumento
+    );
+
     List<DocumentoGenerado> buscarPorRegistroInternoProceso(String registroInternoProceso);
 
     List<DocumentoGenerado> listar();
+
 }
