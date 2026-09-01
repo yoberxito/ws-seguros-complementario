@@ -10,6 +10,7 @@ import essalud.gob.pe.wsseguroscomplementario.incidencia.service.IncidenciaOpera
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoResponse;
 import essalud.gob.pe.wsseguroscomplementario.expediente.dto.RegistrarAvanceExpedienteRequest;
 import essalud.gob.pe.wsseguroscomplementario.expediente.service.ExpedienteDigitalService;
+import essalud.gob.pe.wsseguroscomplementario.notificacion.service.NotificacionCierreVidaService;
 import org.springframework.stereotype.Service;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoSellado;
 import org.springframework.web.multipart.MultipartFile;
@@ -58,6 +59,8 @@ public class CierreDocumentalCompletoService {
             respaldoFormulario6012Service;
     private final DepuracionFinalProcesoVidaService
             depuracionFinalProcesoVidaService;
+    private final NotificacionCierreVidaService
+            notificacionCierreVidaService;
 
     public CierreDocumentalCompletoService(
             GeneracionDocumentoSelladoService generacionDocumentoSelladoService,
@@ -69,7 +72,10 @@ public class CierreDocumentalCompletoService {
             RespaldoFormulario6012Service
                     respaldoFormulario6012Service,
             DepuracionFinalProcesoVidaService
-                    depuracionFinalProcesoVidaService
+                    depuracionFinalProcesoVidaService,
+
+            NotificacionCierreVidaService
+                    notificacionCierreVidaService
     ) {
         this.generacionDocumentoSelladoService =
                 generacionDocumentoSelladoService;
@@ -91,6 +97,9 @@ public class CierreDocumentalCompletoService {
                 respaldoFormulario6012Service;
         this.depuracionFinalProcesoVidaService =
                 depuracionFinalProcesoVidaService;
+
+        this.notificacionCierreVidaService =
+                notificacionCierreVidaService;
     }
 
     public CierreDocumentalCompletoResponse procesarCierreDocumental(
@@ -392,12 +401,6 @@ public class CierreDocumentalCompletoService {
                                         .getIdDocumentoPublicado()
                         );
 
-                depuracionFinalProcesoVidaService
-                        .depurarSiCorresponde(
-                                response
-                                        .getRegistroInternoProceso()
-                        );
-
             } catch (Exception e) {
 
                 response.setCierreCompletado(
@@ -432,6 +435,26 @@ public class CierreDocumentalCompletoService {
                 );
             }
 
+            if (response.isCierreCompletado()) {
+
+                boolean correoFinalCorrecto =
+                        procesarCorreoFinal(
+                                response,
+                                usuarioResponsable,
+                                ipOrigen,
+                                datosSesionDispositivo
+                        );
+
+                if (correoFinalCorrecto) {
+
+                    depuracionFinalProcesoVidaService
+                            .depurarSiCorresponde(
+                                    response
+                                            .getRegistroInternoProceso()
+                            );
+                }
+            }
+
         } else {
 
             response.setEstadoCierreDocumental(
@@ -458,6 +481,248 @@ public class CierreDocumentalCompletoService {
                 usuarioResponsable,
                 ipOrigen,
                 datosSesionDispositivo
+        );
+    }
+
+    private boolean procesarCorreoFinal(
+            CierreDocumentalCompletoResponse response,
+            String usuarioResponsable,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        boolean envioProcesado;
+
+        try {
+
+            envioProcesado =
+                    notificacionCierreVidaService
+                            .enviarSiCorresponde(
+                                    response
+                                            .getRegistroInternoProceso(),
+
+                                    valorPorDefecto(
+                                            usuarioResponsable,
+                                            EstadoProcesoConstants
+                                                    .USUARIO_SISTEMA
+                                    ),
+
+                                    ipOrigen,
+                                    datosSesionDispositivo
+                            );
+
+        } catch (Exception e) {
+
+            response.setRequiereIntervencionInterna(
+                    true
+            );
+
+            response.setMensajeCierre(
+                    "El documento fue sellado y publicado correctamente, "
+                            + "pero el correo de confirmación quedó pendiente "
+                            + "por una incidencia interna."
+            );
+
+            response.getObservaciones()
+                    .add(
+                            "No fue posible enviar el correo final: "
+                                    + mensajeSeguroExcepcion(e)
+                    );
+
+            /*
+             * Una falla adicional al registrar
+             * la incidencia no debe romper el
+             * cierre documental ya completado.
+             */
+            try {
+
+                registrarIncidenciaCorreoFinal(
+                        response,
+                        e,
+                        usuarioResponsable,
+                        ipOrigen,
+                        datosSesionDispositivo
+                );
+
+            } catch (Exception errorIncidencia) {
+
+                response.getObservaciones()
+                        .add(
+                                "Además, no fue posible registrar "
+                                        + "la incidencia del correo final: "
+                                        + mensajeSeguroExcepcion(
+                                        errorIncidencia
+                                )
+                        );
+            }
+
+            return false;
+        }
+
+        /*
+         * El ciclo todavía no está completo.
+         * Ejemplo: primer PDF de un flujo COMPLETO.
+         */
+        if (!envioProcesado) {
+            return true;
+        }
+
+        /*
+         * El correo ya fue enviado.
+         *
+         * El cierre de una incidencia anterior
+         * es una operación posterior e independiente:
+         * si falla, NO debemos afirmar que el correo
+         * falló.
+         */
+        try {
+
+            incidenciaOperativaService
+                    .cerrarIncidenciasAbiertasPorSistema(
+                            response
+                                    .getRegistroInternoProceso(),
+
+                            response
+                                    .getNumeroDocumentoTrabajador(),
+
+                            response
+                                    .getTipoDocumento(),
+
+                            "NOTIFICACION_CORREO_FINAL",
+
+                            "El correo final fue enviado correctamente.",
+
+                            valorPorDefecto(
+                                    usuarioResponsable,
+                                    EstadoProcesoConstants
+                                            .USUARIO_SISTEMA
+                            ),
+
+                            ipOrigen,
+                            datosSesionDispositivo,
+
+                            response
+                                    .getIdDocumentoSellado(),
+
+                            response
+                                    .getIdDocumentoPublicado()
+                    );
+
+        } catch (Exception e) {
+
+            response.setRequiereIntervencionInterna(
+                    true
+            );
+
+            response.getObservaciones()
+                    .add(
+                            "El correo fue enviado correctamente, "
+                                    + "pero no fue posible cerrar su "
+                                    + "incidencia operativa anterior: "
+                                    + mensajeSeguroExcepcion(e)
+                    );
+        }
+
+        return true;
+    }
+
+    private void registrarIncidenciaCorreoFinal(
+            CierreDocumentalCompletoResponse response,
+            Exception error,
+            String usuarioResponsable,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        RegistrarIncidenciaOperativaRequest request =
+                new RegistrarIncidenciaOperativaRequest();
+
+        request.setRegistroInternoProceso(
+                response.getRegistroInternoProceso()
+        );
+
+        request.setTipoDocumentoTrabajador(
+                response.getTipoDocumentoTrabajador()
+        );
+
+        request.setNumeroDocumentoTrabajador(
+                response.getNumeroDocumentoTrabajador()
+        );
+
+        request.setTipoDocumentoProceso(
+                response.getTipoDocumento()
+        );
+
+        request.setIdDocumentoSellado(
+                response.getIdDocumentoSellado()
+        );
+
+        request.setIdDocumentoPublicado(
+                response.getIdDocumentoPublicado()
+        );
+
+        request.setSistemaInvolucrado(
+                "NOTIFICACION_CORREO_FINAL"
+        );
+
+        request.setEtapaProceso(
+                "ENVIO_CORREO_FINAL"
+        );
+
+        request.setTipoIncidenciaOperativa(
+                "ERROR_ENVIO_CORREO_FINAL"
+        );
+
+        request.setMotivoObservado(
+                "No fue posible enviar el correo final del trámite +Vida."
+        );
+
+        request.setDetalleIncidencia(
+                mensajeSeguroExcepcion(error)
+        );
+
+        request.setUsuarioResponsable(
+                valorPorDefecto(
+                        usuarioResponsable,
+                        EstadoProcesoConstants.USUARIO_SISTEMA
+                )
+        );
+
+        request.setIpOrigen(
+                ipOrigen
+        );
+
+        request.setDatosSesionDispositivo(
+                datosSesionDispositivo
+        );
+
+        incidenciaOperativaService
+                .registrarOReintentarObservadoOperativo(
+                        request
+                );
+    }
+
+    private String mensajeSeguroExcepcion(
+            Exception error
+    ) {
+
+        if (
+                error == null
+                        || campoVacio(
+                        error.getMessage()
+                )
+        ) {
+            return "Error interno no especificado.";
+        }
+
+        String mensaje =
+                error.getMessage().trim();
+
+        return mensaje.length() <= 2000
+                ? mensaje
+                : mensaje.substring(
+                0,
+                2000
         );
     }
 

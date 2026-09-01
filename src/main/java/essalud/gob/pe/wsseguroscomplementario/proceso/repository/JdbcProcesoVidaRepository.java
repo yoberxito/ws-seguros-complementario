@@ -750,6 +750,81 @@ public class JdbcProcesoVidaRepository implements ProcesoVidaRepository {
     }
 
     @Override
+    public ProcesoVida activarFormulario6012Posterior(
+            String registroInternoProceso
+    ) {
+
+        if (
+                registroInternoProceso == null
+                        || registroInternoProceso
+                        .trim()
+                        .isEmpty()
+        ) {
+            throw new IllegalArgumentException(
+                    "El registro interno del proceso es obligatorio."
+            );
+        }
+
+        String registro =
+                registroInternoProceso.trim();
+
+        /*
+         * Esta transición es deliberadamente
+         * restringida.
+         *
+         * No permite cambiar libremente el flujo.
+         * Únicamente:
+         *
+         * SOLO_AUTORIZACION
+         *        ↓
+         * FORMULARIO_6012_POSTERIOR
+         */
+        String sql = """
+        UPDATE TEMP_SECOMASVIDA
+
+        SET
+            TIPO_FLUJO =
+                'FORMULARIO_6012_POSTERIOR',
+
+            FECHA_ACTUALIZACION =
+                SYSTIMESTAMP
+
+        WHERE
+            REGISTRO_INTERNO_PROCESO = ?
+
+            AND UPPER(
+                NVL(
+                    TIPO_FLUJO,
+                    ''
+                )
+            ) = 'SOLO_AUTORIZACION'
+        """;
+
+        int filasActualizadas =
+                jdbcTemplate.update(
+                        sql,
+                        registro
+                );
+
+        if (filasActualizadas == 0) {
+
+            throw new IllegalStateException(
+                    "No fue posible activar el ciclo posterior del Formulario 6012. "
+                            + "El trámite debe encontrarse en flujo SOLO_AUTORIZACION."
+            );
+        }
+
+        return buscarPorRegistroInternoProceso(
+                registro
+        ).orElseThrow(
+                () -> new IllegalStateException(
+                        "El flujo fue actualizado a FORMULARIO_6012_POSTERIOR, "
+                                + "pero el proceso no pudo recuperarse desde Oracle."
+                )
+        );
+    }
+
+    @Override
     public ProcesoVida actualizarEstado(
             String registroInternoProceso,
             String codigoSiguienteEstado
@@ -790,9 +865,12 @@ public class JdbcProcesoVidaRepository implements ProcesoVidaRepository {
                              TIPO_FLUJO,
                              ''
                          )
-                     ) = 'COMPLETO'
+                     ) IN (
+                         'COMPLETO',
+                         'FORMULARIO_6012_POSTERIOR'
+                     )
                 THEN 'REGISTRO_TOTAL'
-
+            
                 ELSE ESTADO_OPERATIVO
             END,
 

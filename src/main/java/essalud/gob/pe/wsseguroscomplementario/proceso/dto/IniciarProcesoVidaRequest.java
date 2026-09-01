@@ -12,6 +12,8 @@ public class IniciarProcesoVidaRequest {
     private String apellidoMaternoTitular;
     private String primerNombreTitular;
     private String segundoNombreTitular;
+    private String correo;
+    private String celular;
 
     public IniciarProcesoVidaRequest() {
     }
@@ -78,5 +80,20 @@ public class IniciarProcesoVidaRequest {
 
     public void setSegundoNombreTitular(String segundoNombreTitular) {
         this.segundoNombreTitular = segundoNombreTitular;
+    }
+    public String getCorreo() {
+        return correo;
+    }
+
+    public void setCorreo(String correo) {
+        this.correo = correo;
+    }
+
+    public String getCelular() {
+        return celular;
+    }
+
+    public void setCelular(String celular) {
+        this.celular = celular;
     }
 }

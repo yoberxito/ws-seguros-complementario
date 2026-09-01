@@ -38,6 +38,10 @@ public interface ProcesoVidaRepository {
             String codigoSiguienteEstado
     );
 
+    ProcesoVida activarFormulario6012Posterior(
+            String registroInternoProceso
+    );
+
     ProcesoVida actualizarEstado(
             String registroInternoProceso,
             String codigoSiguienteEstado

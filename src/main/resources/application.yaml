@@ -25,3 +25,7 @@ integraciones:
     validar-url: "${OTP_VALIDAR_URL:https://appsqa.essalud.gob.pe/sagw/mia-seguros-hijomenormayor/api/seguro-complementario/validar-otp}"
     email-url: "${OTP_EMAIL_URL:https://appsqa.essalud.gob.pe/sagw/viva-essalud/viva-apinotificaciones/seguros-complementarios/send-otp-email}"
     token: "${OTP_TOKEN:}"
+  correo-final:
+    url: "${CORREO_FINAL_URL:https://appsqa.essalud.gob.pe/sagw/viva-essalud/viva-apinotificaciones/seguros-complementarios/send-email}"
+    token: "${CORREO_FINAL_TOKEN:${OTP_TOKEN:}}"
+    destinatario-prueba: "${CORREO_FINAL_DESTINATARIO_PRUEBA:}"

@@ -8,7 +8,7 @@ import essalud.gob.pe.wsseguroscomplementario.proceso.model.BeneficiarioVida;
 import essalud.gob.pe.wsseguroscomplementario.proceso.repository.BeneficiarioVidaRepository;
 import essalud.gob.pe.wsseguroscomplementario.proceso.dto.ActualizarNavegacionRequest;
 import org.springframework.transaction.annotation.Transactional;
-
+import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoSustentoRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,20 +40,40 @@ public class ProgresoVidaService {
             "BENEFICIARIOS";
     private static final String ESTADO_DESPUES_BENEFICIARIOS =
             "DECLARACION_JURADA";
+    private static final String ESTADO_DOCUMENTOS =
+            "DOCUMENTOS";
+    private static final String
+            TIPO_FLUJO_SOLO_AUTORIZACION =
+            "SOLO_AUTORIZACION";
+
+    private static final String
+            TIPO_FLUJO_FORMULARIO_6012_POSTERIOR =
+            "FORMULARIO_6012_POSTERIOR";
+
+    private static final String
+            TIPO_DOCUMENTO_AUTORIZACION =
+            "AUTORIZACION_DESCUENTO";
     private static final ZoneId ZONA_HORARIA_LIMA =
             ZoneId.of(EstadoProcesoConstants.ZONA_HORARIA_LIMA);
     private final ProcesoVidaRepository procesoVidaRepository;
     private final BeneficiarioVidaRepository
             beneficiarioVidaRepository;
+    private final DocumentoSustentoRepository
+            documentoSustentoRepository;
     public ProgresoVidaService(
             ProcesoVidaRepository procesoVidaRepository,
-            BeneficiarioVidaRepository beneficiarioVidaRepository
+            BeneficiarioVidaRepository beneficiarioVidaRepository,
+            DocumentoSustentoRepository documentoSustentoRepository
     ) {
+
         this.procesoVidaRepository =
                 procesoVidaRepository;
 
         this.beneficiarioVidaRepository =
                 beneficiarioVidaRepository;
+
+        this.documentoSustentoRepository =
+                documentoSustentoRepository;
     }
 
     public IniciarProcesoVidaResponse iniciarProceso(
@@ -153,6 +173,14 @@ public class ProgresoVidaService {
 
         procesoVida.setSegundoNombreTitular(
                 limpiarValor(request.getSegundoNombreTitular())
+        );
+
+        procesoVida.setCorreo(
+                limpiarValor(request.getCorreo())
+        );
+
+        procesoVida.setNumeroTelefono(
+                limpiarValor(request.getCelular())
         );
 
         ProcesoVida procesoGuardado =
@@ -866,6 +894,43 @@ public class ProgresoVidaService {
                         request.getBeneficiarios()
                 );
 
+        boolean iniciaFormulario6012Posterior =
+                !beneficiariosPersistir.isEmpty()
+
+                        && TIPO_FLUJO_SOLO_AUTORIZACION
+                        .equalsIgnoreCase(
+                                procesoVida
+                                        .getTipoFlujo()
+                        );
+
+        if (iniciaFormulario6012Posterior) {
+
+            /*
+             * Un ciclo 6012 posterior únicamente puede
+             * nacer después de existir una Autorización
+             * de Descuento final publicada.
+             *
+             * No confiamos en un indicador del frontend.
+             * La condición se comprueba contra la
+             * persistencia documental.
+             */
+            boolean autorizacionPublicada =
+                    documentoSustentoRepository
+                            .estaPublicado(
+                                    registro,
+                                    TIPO_DOCUMENTO_AUTORIZACION
+                            );
+
+            if (!autorizacionPublicada) {
+
+                throw new IllegalStateException(
+                        "No se puede iniciar el Formulario 6012 posterior "
+                                + "porque la Autorización de Descuento "
+                                + "todavía no se encuentra publicada."
+                );
+            }
+        }
+
         /*
          * La lista recibida representa la colección
          * completa vigente del trámite.
@@ -890,11 +955,24 @@ public class ProgresoVidaService {
                         false
                 );
 
+        if (iniciaFormulario6012Posterior) {
+
+            procesoVidaRepository
+                    .activarFormulario6012Posterior(
+                            registro
+                    );
+        }
+
+        String estadoSiguiente =
+                iniciaFormulario6012Posterior
+                        ? ESTADO_DOCUMENTOS
+                        : ESTADO_DESPUES_BENEFICIARIOS;
+
         ProcesoVida procesoActualizado =
                 procesoVidaRepository
                         .actualizarEstado(
                                 registro,
-                                ESTADO_DESPUES_BENEFICIARIOS
+                                estadoSiguiente
                         );
 
         String mensaje =

@@ -14,6 +14,26 @@ public class DepuracionFinalProcesoVidaService {
             ESTADO_FINALIZACION =
             "FINALIZACION";
 
+    private static final String
+            FLUJO_COMPLETO =
+            "COMPLETO";
+
+    private static final String
+            FLUJO_SOLO_AUTORIZACION =
+            "SOLO_AUTORIZACION";
+
+    private static final String
+            FLUJO_6012_POSTERIOR =
+            "FORMULARIO_6012_POSTERIOR";
+
+    private static final String
+            DOCUMENTO_AUTORIZACION =
+            "AUTORIZACION_DESCUENTO";
+
+    private static final String
+            DOCUMENTO_6012 =
+            "FORMULARIO_6012";
+
     private final ProcesoVidaRepository
             procesoVidaRepository;
 
@@ -76,6 +96,72 @@ public class DepuracionFinalProcesoVidaService {
         ) {
             return false;
         }
+
+
+        /* AQUÍ PEGAS EL BLOQUE NUEVO */
+
+
+        String tipoFlujo =
+                proceso.getTipoFlujo();
+
+        if (
+                tipoFlujo == null
+                        || tipoFlujo.trim().isEmpty()
+        ) {
+            return false;
+        }
+
+        String flujo =
+                tipoFlujo
+                        .trim()
+                        .toUpperCase();
+
+        boolean cicloDocumentalCompleto;
+
+        switch (flujo) {
+
+            case FLUJO_COMPLETO ->
+
+                    cicloDocumentalCompleto =
+                            documentoSustentoRepository
+                                    .estaPublicado(
+                                            registroInternoProceso,
+                                            DOCUMENTO_AUTORIZACION
+                                    )
+                                    &&
+                                    documentoSustentoRepository
+                                            .estaPublicado(
+                                                    registroInternoProceso,
+                                                    DOCUMENTO_6012
+                                            );
+
+            case FLUJO_SOLO_AUTORIZACION ->
+
+                    cicloDocumentalCompleto =
+                            documentoSustentoRepository
+                                    .estaPublicado(
+                                            registroInternoProceso,
+                                            DOCUMENTO_AUTORIZACION
+                                    );
+
+            case FLUJO_6012_POSTERIOR ->
+
+                    cicloDocumentalCompleto =
+                            documentoSustentoRepository
+                                    .estaPublicado(
+                                            registroInternoProceso,
+                                            DOCUMENTO_6012
+                                    );
+
+            default -> {
+                return false;
+            }
+        }
+
+        if (!cicloDocumentalCompleto) {
+            return false;
+        }
+
 
         /*
          * No se destruye evidencia técnica si
