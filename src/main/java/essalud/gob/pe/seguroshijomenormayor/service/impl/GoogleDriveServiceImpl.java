@@ -620,6 +620,247 @@ public class GoogleDriveServiceImpl
     }
 
 
+
+    /*
+     * ==========================================================
+     * JOB: COPIA NO DESTRUCTIVA PARA DISTRIBUCION PERSONAL
+     * ==========================================================
+     *
+     * Conserva el archivo fuente en Preparacion.
+     *
+     * Idempotencia:
+     *
+     * si ya existe un archivo con el mismo nombre bajo
+     * el destino, solamente se reutiliza cuando las
+     * propiedades documentales coinciden.
+     */
+    @Override
+    public File copiarArchivoEnCarpeta(
+            String fileId,
+            String folderId
+    ) throws IOException {
+
+        validarTexto(
+                fileId,
+                "El identificador del archivo Drive es obligatorio."
+        );
+
+        validarTexto(
+                folderId,
+                "La carpeta destino Drive es obligatoria."
+        );
+
+        File origen =
+                drive.files()
+                        .get(
+                                fileId.trim()
+                        )
+                        .setSupportsAllDrives(true)
+                        .setFields(
+                                "id,name,mimeType,size,"
+                                        + "webViewLink,parents,"
+                                        + "appProperties"
+                        )
+                        .execute();
+
+        if (
+                origen == null
+                        || origen.getId() == null
+                        || origen.getId()
+                                .trim()
+                                .isEmpty()
+        ) {
+
+            throw new IllegalStateException(
+                    "No se pudo recuperar el archivo fuente desde Google Drive."
+            );
+        }
+
+        if (
+                MIME_TYPE_FOLDER.equals(
+                        origen.getMimeType()
+                )
+        ) {
+
+            throw new IllegalArgumentException(
+                    "copiarArchivoEnCarpeta solamente admite archivos."
+            );
+        }
+
+        validarTexto(
+                origen.getName(),
+                "El archivo fuente no cuenta con nombre."
+        );
+
+        List<File> existentes =
+                buscarArchivosPorNombre(
+                        origen.getName().trim(),
+                        folderId.trim()
+                );
+
+        if (existentes.size() > 1) {
+
+            throw new IllegalStateException(
+                    "Existe mas de una copia Drive con el nombre "
+                            + origen.getName()
+                            + " bajo la misma carpeta destino."
+            );
+        }
+
+        if (existentes.size() == 1) {
+
+            File existente =
+                    existentes.get(0);
+
+            validarMismaIdentidadDocumento(
+                    origen,
+                    existente
+            );
+
+            return existente;
+        }
+
+        File metadatosCopia =
+                new File();
+
+        metadatosCopia.setName(
+                origen.getName().trim()
+        );
+
+        metadatosCopia.setParents(
+                Collections.singletonList(
+                        folderId.trim()
+                )
+        );
+
+        if (origen.getAppProperties() != null) {
+
+            metadatosCopia.setAppProperties(
+                    new HashMap<>(
+                            origen.getAppProperties()
+                    )
+            );
+        }
+
+        File copia =
+                drive.files()
+                        .copy(
+                                origen.getId(),
+                                metadatosCopia
+                        )
+                        .setSupportsAllDrives(true)
+                        .setFields(
+                                "id,name,mimeType,size,"
+                                        + "webViewLink,parents,"
+                                        + "appProperties"
+                        )
+                        .execute();
+
+        if (
+                copia == null
+                        || copia.getId() == null
+                        || copia.getId()
+                                .trim()
+                                .isEmpty()
+        ) {
+
+            throw new IllegalStateException(
+                    "Google Drive no confirmo la copia del archivo."
+            );
+        }
+
+        validarMismaIdentidadDocumento(
+                origen,
+                copia
+        );
+
+        log.info(
+                "Archivo Drive copiado. origen={}, copia={}, destino={}",
+                origen.getId(),
+                copia.getId(),
+                folderId
+        );
+
+        return copia;
+    }
+
+
+    /*
+     * Las propiedades institucionales del documento permiten
+     * evitar reutilizar silenciosamente un archivo que tenga
+     * el mismo nombre pero corresponda a otro trabajador.
+     */
+    private void validarMismaIdentidadDocumento(
+            File origen,
+            File candidato
+    ) {
+
+        if (candidato == null) {
+
+            throw new IllegalStateException(
+                    "La copia Drive recuperada es invalida."
+            );
+        }
+
+        Map<String, String> propiedadesOrigen =
+                origen.getAppProperties();
+
+        Map<String, String> propiedadesCandidato =
+                candidato.getAppProperties();
+
+        if (
+                propiedadesOrigen == null
+                        || propiedadesCandidato == null
+        ) {
+
+            throw new IllegalStateException(
+                    "No es posible comprobar la identidad documental de la copia Drive."
+            );
+        }
+
+        boolean mismoTipoLogico =
+                java.util.Objects.equals(
+                        propiedadesOrigen.get(
+                                "idTpDoc"
+                        ),
+                        propiedadesCandidato.get(
+                                "idTpDoc"
+                        )
+                );
+
+        boolean mismoTipoDocumento =
+                java.util.Objects.equals(
+                        propiedadesOrigen.get(
+                                "tpDocument"
+                        ),
+                        propiedadesCandidato.get(
+                                "tpDocument"
+                        )
+                );
+
+        boolean mismoNumeroDocumento =
+                java.util.Objects.equals(
+                        propiedadesOrigen.get(
+                                "numDocument"
+                        ),
+                        propiedadesCandidato.get(
+                                "numDocument"
+                        )
+                );
+
+        if (
+                !mismoTipoLogico
+                        || !mismoTipoDocumento
+                        || !mismoNumeroDocumento
+        ) {
+
+            throw new IllegalStateException(
+                    "Existe un archivo Drive con el mismo nombre, "
+                            + "pero con otra identidad documental."
+            );
+        }
+    }
+
     /*
      * ==========================================================
      * JOB: MOVER ARCHIVO O CARPETA

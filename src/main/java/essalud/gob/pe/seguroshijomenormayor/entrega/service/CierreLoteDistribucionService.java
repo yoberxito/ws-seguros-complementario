@@ -3,6 +3,7 @@ package essalud.gob.pe.seguroshijomenormayor.entrega.service;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.CierreLotePreparado;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.LoteDistribucion;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.PreparacionEntregaLote;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,21 +15,21 @@ import java.time.LocalDate;
  * Esta clase NO:
  * - consulta Google Drive;
  * - genera Excel;
- * - consulta SAS;
- * - envía correo.
+ * - consulta el origen documental;
+ * - envia correo.
  *
- * Recibe el resultado definitivo de esas etapas:
- * período, destino, cantidad de documentos y URL Drive.
+ * MAPFRE conserva el flujo existente.
  *
- * A partir de ello:
- * 1. crea o recupera el lote;
- * 2. crea o reutiliza la entrega del destinatario;
- * 3. genera/renueva el token cuando corresponde;
- * 4. publica el lote;
- * 5. devuelve el token únicamente en memoria.
+ * PERSONAL puede cerrar un lote especifico por destino
+ * institucional utilizando codigoDestino como parte de
+ * la identidad deterministica del lote.
  */
 @Service("masVidaCierreLoteDistribucionService")
 public class CierreLoteDistribucionService {
+
+    private static final String
+            DESTINO_PERSONAL =
+            "PERSONAL";
 
     private final LoteDistribucionService
             loteDistribucionService;
@@ -40,6 +41,7 @@ public class CierreLoteDistribucionService {
             LoteDistribucionService loteDistribucionService,
             EntregaLoteService entregaLoteService
     ) {
+
         this.loteDistribucionService =
                 loteDistribucionService;
 
@@ -47,6 +49,13 @@ public class CierreLoteDistribucionService {
                 entregaLoteService;
     }
 
+    /*
+     * Contrato existente.
+     *
+     * Se conserva para MAPFRE y para no romper consumidores
+     * actuales mientras PERSONAL migra al nuevo contrato
+     * multidestino.
+     */
     @Transactional
     public CierreLotePreparado prepararLotePublicado(
             String destinatario,
@@ -64,11 +73,6 @@ public class CierreLoteDistribucionService {
                 urlAcceso
         );
 
-        /*
-         * Idempotencia del lote:
-         * obtenerOCrear utiliza el código determinístico
-         * formado por destino + período.
-         */
         LoteDistribucion lote =
                 loteDistribucionService
                         .obtenerOCrear(
@@ -77,11 +81,97 @@ public class CierreLoteDistribucionService {
                                 fechaFin
                         );
 
-        /*
-         * La URL recibida aquí debe ser la carpeta final
-         * del lote en Drive, no la carpeta temporal
-         * de preparación.
-         */
+        return completarPreparacion(
+                lote,
+                destinatario,
+                null,
+                fechaInicio,
+                fechaFin,
+                correoDestinatario,
+                cantidadDocumentos,
+                urlAcceso
+        );
+    }
+
+    /*
+     * PERSONAL MULTIDESTINO.
+     *
+     * codigoDestino identifica la Red/unidad institucional.
+     *
+     * TIPO_DESTINATARIO en ENTREGA_LOTE continua siendo
+     * PERSONAL. La separacion entre Redes se consigue porque
+     * cada codigoDestino produce un LOTE_DISTRIBUCION distinto.
+     */
+    @Transactional
+    public CierreLotePreparado prepararLotePublicadoPersonal(
+            String codigoDestino,
+            LocalDate fechaInicio,
+            LocalDate fechaFin,
+            String correoDestinatario,
+            int cantidadDocumentos,
+            String urlAcceso
+    ) {
+
+        validar(
+                fechaInicio,
+                fechaFin,
+                cantidadDocumentos,
+                urlAcceso
+        );
+
+        validarCodigoDestinoPersonal(
+                codigoDestino
+        );
+
+        LoteDistribucion lote =
+                loteDistribucionService
+                        .obtenerOCrearPersonal(
+                                codigoDestino,
+                                fechaInicio,
+                                fechaFin
+                        );
+
+        return completarPreparacion(
+                lote,
+                DESTINO_PERSONAL,
+                codigoDestino,
+                fechaInicio,
+                fechaFin,
+                correoDestinatario,
+                cantidadDocumentos,
+                urlAcceso
+        );
+    }
+
+    /*
+     * Completa las etapas comunes:
+     *
+     * 1. prepara/reutiliza ENTREGA_LOTE;
+     * 2. genera o reutiliza token segun estado;
+     * 3. publica LOTE_DISTRIBUCION si corresponde;
+     * 4. recupera el lote realmente persistido.
+     */
+    private CierreLotePreparado completarPreparacion(
+            LoteDistribucion lote,
+            String destinatario,
+            String codigoDestinoPersonal,
+            LocalDate fechaInicio,
+            LocalDate fechaFin,
+            String correoDestinatario,
+            int cantidadDocumentos,
+            String urlAcceso
+    ) {
+
+        if (
+                lote == null
+                        || lote.getIdLote() == null
+        ) {
+
+            throw new IllegalStateException(
+                    "El lote de distribucion no pudo resolverse."
+            );
+        }
+
         PreparacionEntregaLote preparacion =
                 entregaLoteService
                         .prepararEntrega(
@@ -93,11 +183,7 @@ public class CierreLoteDistribucionService {
                         );
 
         /*
-         * Publicamos únicamente cuando todavía
-         * no existe fecha de publicación.
-         *
-         * Esto permite ejecutar nuevamente el cierre
-         * sin considerar un lote ya publicado como error.
+         * Publicamos solamente una vez.
          */
         if (lote.getFechaPublicacion() == null) {
 
@@ -110,27 +196,48 @@ public class CierreLoteDistribucionService {
             if (!publicado) {
 
                 throw new IllegalStateException(
-                        "Oracle no confirmó la publicación del lote."
+                        "Oracle no confirmo la publicacion del lote."
                 );
             }
         }
 
-        /*
-         * Recuperamos el registro para devolver
-         * el estado realmente persistido en Oracle.
-         */
-        LoteDistribucion loteActualizado =
-                loteDistribucionService
-                        .obtenerOCrear(
-                                destinatario,
-                                fechaInicio,
-                                fechaFin
-                        );
+        LoteDistribucion loteActualizado;
+
+        if (
+                codigoDestinoPersonal == null
+                        || codigoDestinoPersonal.trim().isEmpty()
+        ) {
+
+            loteActualizado =
+                    loteDistribucionService
+                            .obtenerOCrear(
+                                    destinatario,
+                                    fechaInicio,
+                                    fechaFin
+                            );
+
+        } else {
+
+            loteActualizado =
+                    loteDistribucionService
+                            .obtenerOCrearPersonal(
+                                    codigoDestinoPersonal,
+                                    fechaInicio,
+                                    fechaFin
+                            );
+        }
+
+        if (loteActualizado == null) {
+
+            throw new IllegalStateException(
+                    "El lote procesado no pudo recuperarse."
+            );
+        }
 
         if (loteActualizado.getFechaPublicacion() == null) {
 
             throw new IllegalStateException(
-                    "El lote fue procesado, pero Oracle no registra fecha de publicación."
+                    "El lote fue procesado, pero Oracle no registra fecha de publicacion."
             );
         }
 
@@ -144,7 +251,9 @@ public class CierreLoteDistribucionService {
             CierreLotePreparado cierre
     ) {
 
-        validarCierre(cierre);
+        validarCierre(
+                cierre
+        );
 
         return entregaLoteService
                 .marcarNotificacionEnviando(
@@ -159,7 +268,9 @@ public class CierreLoteDistribucionService {
             CierreLotePreparado cierre
     ) {
 
-        validarCierre(cierre);
+        validarCierre(
+                cierre
+        );
 
         return entregaLoteService
                 .marcarNotificacionEnviada(
@@ -174,7 +285,9 @@ public class CierreLoteDistribucionService {
             CierreLotePreparado cierre
     ) {
 
-        validarCierre(cierre);
+        validarCierre(
+                cierre
+        );
 
         return entregaLoteService
                 .marcarErrorNotificacion(
@@ -183,6 +296,21 @@ public class CierreLoteDistribucionService {
                                 .getEntrega()
                                 .getIdEntrega()
                 );
+    }
+
+    private void validarCodigoDestinoPersonal(
+            String codigoDestino
+    ) {
+
+        if (
+                codigoDestino == null
+                        || codigoDestino.trim().isEmpty()
+        ) {
+
+            throw new IllegalArgumentException(
+                    "El codigo del destino PERSONAL es obligatorio."
+            );
+        }
     }
 
     private void validar(
@@ -198,11 +326,15 @@ public class CierreLoteDistribucionService {
         ) {
 
             throw new IllegalArgumentException(
-                    "El período del lote es obligatorio."
+                    "El periodo del lote es obligatorio."
             );
         }
 
-        if (fechaInicio.isAfter(fechaFin)) {
+        if (
+                fechaInicio.isAfter(
+                        fechaFin
+                )
+        ) {
 
             throw new IllegalArgumentException(
                     "La fecha inicial del lote no puede ser posterior a la fecha final."
@@ -234,17 +366,15 @@ public class CierreLoteDistribucionService {
         if (
                 cierre == null
                         || cierre.getPreparacionEntrega() == null
-                        || cierre
-                                .getPreparacionEntrega()
+                        || cierre.getPreparacionEntrega()
                                 .getEntrega() == null
-                        || cierre
-                                .getPreparacionEntrega()
+                        || cierre.getPreparacionEntrega()
                                 .getEntrega()
                                 .getIdEntrega() == null
         ) {
 
             throw new IllegalArgumentException(
-                    "La preparación de la entrega es obligatoria."
+                    "La preparacion de la entrega es obligatoria."
             );
         }
     }

@@ -6,13 +6,39 @@ import java.util.Optional;
 
 public interface EntregaLoteRepository {
 
+    EntregaLote crear(
+            EntregaLote entrega
+    );
+
+    Optional<EntregaLote> buscarPorLoteYDestinatario(
+            Long idLote,
+            String tipoDestinatario
+    );
+
     Optional<EntregaLote> buscarPorTokenHash(
             String tokenHash
     );
 
-    boolean marcarOtpValidadoSiPendiente(
-            String tokenHash
+    boolean actualizarPreparacionPendiente(
+            Long idEntrega,
+            String correoDestinatario,
+            String tokenHash,
+            int cantidadDocumentos,
+            String urlAcceso
     );
+
+    boolean marcarEnviando(
+            Long idEntrega
+    );
+
+    boolean marcarEnviado(
+            Long idEntrega
+    );
+
+    boolean marcarErrorEnvio(
+            Long idEntrega
+    );
+
     boolean registrarAcuseSiPendiente(
             String tokenHash,
             String textoAcuse,

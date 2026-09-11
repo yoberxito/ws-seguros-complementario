@@ -42,10 +42,12 @@ public class ReporteJobSegMasVida {
      * Q2: 19 -> 03 del mes siguiente
      *     ejecución: día 4.
      */
-    @Scheduled(
-            cron = "0 0 2 4,19 * *",
-            zone = "America/Lima"
-    )
+    /*
+     * PERSONAL queda temporalmente fuera del scheduler automatico.
+     *
+     * El metodo permanece disponible para pruebas manuales
+     * mientras se completa la distribucion multidestino por Red.
+     */
     public void generarReporteQuincenalPersonal() {
 
         reporteServiceSeguroMasVida

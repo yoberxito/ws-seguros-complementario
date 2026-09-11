@@ -55,6 +55,19 @@ public interface GoogleDriveService {
     ) throws IOException;
 
     /*
+     * Copia no destructiva de un archivo hacia otra carpeta.
+     *
+     * Se utiliza en PERSONAL multidestino para conservar
+     * intacta la carpeta fuente de preparacion.
+     *
+     * La implementacion debe ser idempotente.
+     */
+    File copiarArchivoEnCarpeta(
+            String fileId,
+            String folderId
+    ) throws IOException;
+
+    /*
      * Operación genérica.
      *
      * La decisión de qué carpeta corresponde a MAPFRE

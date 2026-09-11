@@ -27,15 +27,9 @@ public class JdbcHistorialEntregaLoteRepository
             String datosSesionDispositivo
     ) {
 
-        /*
-         * Resolvemos ID_ENTREGA internamente
-         * usando TOKEN_HASH.
-         *
-         * El identificador interno no necesita
-         * salir hacia controller ni frontend.
-         */
         String sql = """
                 INSERT INTO HISTORIAL_ENTREGA_LOTE (
+                    ID_HISTORIAL_ENTREGA,
                     COD_EVENTO_HISTORIAL,
                     ID_ENTREGA,
                     TIPO_EVENTO,
@@ -47,6 +41,7 @@ public class JdbcHistorialEntregaLoteRepository
                 )
 
                 SELECT
+                    SEQ_HIST_ENTREGA_LOTE.NEXTVAL,
                     ?,
                     E.ID_ENTREGA,
                     ?,

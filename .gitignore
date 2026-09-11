@@ -31,3 +31,35 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# >>> +VIDA HIGIENE ARTEFACTOS >>>
+# Backups de trabajo
+**/BACKUP_*/
+*.bak
+*.bak_*
+*.bak.*
+*.backup
+*.backup_*
+*.old
+*.old_*
+*.orig
+*.orig_*
+*~
+
+# Logs y salidas temporales generadas en la raiz
+/*.out.txt
+/*.err.txt
+/*.txt.out
+/*.txt.err
+/*.out
+/*.err
+
+# Reportes temporales generados durante auditorias/pruebas
+/AUDITORIA_*.txt
+/RESULTADO_*.txt
+/VERIFICACION_*.txt
+/DIAGNOSTICO_*.txt
+/CIERRE_BLOQUE_*.txt
+/CORRECCION_*.txt
+/REVISION_*.txt
+# <<< +VIDA HIGIENE ARTEFACTOS <<<

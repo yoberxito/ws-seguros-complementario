@@ -13,14 +13,17 @@ public class ConsultarEntregaPublicaResponse {
 
     private int cantidadDocumentos;
     private LocalDateTime fechaAcuse;
+
     private String correoEnmascarado;
     private String estadoEntrega;
-    private String urlAcceso;
-    private boolean otpValidado;
+
     private boolean acuseRegistrado;
     private boolean accesoDisponible;
+
+    private String urlAcceso;
     private String textoAcuse;
     private String versionTextoAcuse;
+
     public ConsultarEntregaPublicaResponse() {
     }
 
@@ -31,8 +34,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setDestinatario(
             String destinatario
     ) {
-        this.destinatario =
-                destinatario;
+        this.destinatario = destinatario;
     }
 
     public LocalDate getFechaInicioPeriodo() {
@@ -42,8 +44,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setFechaInicioPeriodo(
             LocalDate fechaInicioPeriodo
     ) {
-        this.fechaInicioPeriodo =
-                fechaInicioPeriodo;
+        this.fechaInicioPeriodo = fechaInicioPeriodo;
     }
 
     public LocalDate getFechaFinPeriodo() {
@@ -53,8 +54,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setFechaFinPeriodo(
             LocalDate fechaFinPeriodo
     ) {
-        this.fechaFinPeriodo =
-                fechaFinPeriodo;
+        this.fechaFinPeriodo = fechaFinPeriodo;
     }
 
     public LocalDateTime getFechaPublicacion() {
@@ -64,8 +64,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setFechaPublicacion(
             LocalDateTime fechaPublicacion
     ) {
-        this.fechaPublicacion =
-                fechaPublicacion;
+        this.fechaPublicacion = fechaPublicacion;
     }
 
     public int getCantidadDocumentos() {
@@ -75,8 +74,17 @@ public class ConsultarEntregaPublicaResponse {
     public void setCantidadDocumentos(
             int cantidadDocumentos
     ) {
-        this.cantidadDocumentos =
-                cantidadDocumentos;
+        this.cantidadDocumentos = cantidadDocumentos;
+    }
+
+    public LocalDateTime getFechaAcuse() {
+        return fechaAcuse;
+    }
+
+    public void setFechaAcuse(
+            LocalDateTime fechaAcuse
+    ) {
+        this.fechaAcuse = fechaAcuse;
     }
 
     public String getCorreoEnmascarado() {
@@ -86,8 +94,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setCorreoEnmascarado(
             String correoEnmascarado
     ) {
-        this.correoEnmascarado =
-                correoEnmascarado;
+        this.correoEnmascarado = correoEnmascarado;
     }
 
     public String getEstadoEntrega() {
@@ -97,19 +104,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setEstadoEntrega(
             String estadoEntrega
     ) {
-        this.estadoEntrega =
-                estadoEntrega;
-    }
-
-    public boolean isOtpValidado() {
-        return otpValidado;
-    }
-
-    public void setOtpValidado(
-            boolean otpValidado
-    ) {
-        this.otpValidado =
-                otpValidado;
+        this.estadoEntrega = estadoEntrega;
     }
 
     public boolean isAcuseRegistrado() {
@@ -119,8 +114,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setAcuseRegistrado(
             boolean acuseRegistrado
     ) {
-        this.acuseRegistrado =
-                acuseRegistrado;
+        this.acuseRegistrado = acuseRegistrado;
     }
 
     public boolean isAccesoDisponible() {
@@ -130,8 +124,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setAccesoDisponible(
             boolean accesoDisponible
     ) {
-        this.accesoDisponible =
-                accesoDisponible;
+        this.accesoDisponible = accesoDisponible;
     }
 
     public String getUrlAcceso() {
@@ -141,8 +134,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setUrlAcceso(
             String urlAcceso
     ) {
-        this.urlAcceso =
-                urlAcceso;
+        this.urlAcceso = urlAcceso;
     }
 
     public String getTextoAcuse() {
@@ -152,8 +144,7 @@ public class ConsultarEntregaPublicaResponse {
     public void setTextoAcuse(
             String textoAcuse
     ) {
-        this.textoAcuse =
-                textoAcuse;
+        this.textoAcuse = textoAcuse;
     }
 
     public String getVersionTextoAcuse() {
@@ -165,13 +156,5 @@ public class ConsultarEntregaPublicaResponse {
     ) {
         this.versionTextoAcuse =
                 versionTextoAcuse;
-    }
-
-    public LocalDateTime getFechaAcuse() {
-        return fechaAcuse;
-    }
-
-    public void setFechaAcuse(LocalDateTime fechaAcuse) {
-        this.fechaAcuse = fechaAcuse;
     }
 }
