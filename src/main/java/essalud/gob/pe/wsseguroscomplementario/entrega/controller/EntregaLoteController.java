@@ -4,9 +4,13 @@ import essalud.gob.pe.wsseguroscomplementario.common.dto.ApiResponse;
 import essalud.gob.pe.seguroshijomenormayor.entrega.dto.ConfirmarAcuseEntregaResponse;
 import essalud.gob.pe.seguroshijomenormayor.entrega.dto.ConsultarEntregaPublicaResponse;
 import essalud.gob.pe.seguroshijomenormayor.entrega.exception.EstadoEntregaException;
+import essalud.gob.pe.seguroshijomenormayor.entrega.model.DescargaLotePreparada;
+import essalud.gob.pe.seguroshijomenormayor.entrega.service.DescargaLoteService;
 import essalud.gob.pe.seguroshijomenormayor.entrega.service.EntregaLoteService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,11 +27,18 @@ public class EntregaLoteController {
     private final EntregaLoteService
             entregaLoteService;
 
+    private final DescargaLoteService
+            descargaLoteService;
+
     public EntregaLoteController(
-            EntregaLoteService entregaLoteService
+            EntregaLoteService entregaLoteService,
+            DescargaLoteService descargaLoteService
     ) {
         this.entregaLoteService =
                 entregaLoteService;
+
+        this.descargaLoteService =
+                descargaLoteService;
     }
 
     @GetMapping("/{token}")
@@ -57,11 +68,240 @@ public class EntregaLoteController {
     }
 
     /*
+     * Primera entrega controlada del lote PERSONAL.
+     *
+     * Este GET solamente transfiere el ZIP.
+     * NO registra DESCARGA_LOTE_COMPLETADA.
+     *
+     * La evidencia se registra en un POST independiente
+     * despues de que Angular reciba completamente el Blob.
+     */
+    @GetMapping("/{token}/lote")
+    public ResponseEntity<byte[]> descargarLote(
+            @PathVariable String token
+    ) {
+
+        try {
+
+            DescargaLotePreparada descarga =
+                    descargaLoteService
+                            .prepararDescargaPorToken(
+                                    token
+                            );
+
+            byte[] contenido =
+                    descarga.getContenido();
+
+            return ResponseEntity
+                    .ok()
+                    .header(
+                            HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\""
+                                    + descarga.getNombreArchivo()
+                                    + "\""
+                    )
+                    .contentType(
+                            MediaType.parseMediaType(
+                                    "application/zip"
+                            )
+                    )
+                    .contentLength(
+                            contenido.length
+                    )
+                    .body(
+                            contenido
+                    );
+
+        } catch (IllegalArgumentException e) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.NOT_FOUND
+                    )
+                    .build();
+
+        } catch (EstadoEntregaException e) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.CONFLICT
+                    )
+                    .build();
+
+        } catch (IllegalStateException e) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.INTERNAL_SERVER_ERROR
+                    )
+                    .build();
+        }
+    }
+
+    /*
      * El OTP NO pertenece a este controller.
      *
      * Generación y validación se ejecutan desde Angular
      * contra los servicios institucionales existentes.
      */
+    /*
+     * La generacion y validacion del OTP continuan
+     * realizandose contra el servicio institucional.
+     *
+     * Este endpoint NO valida el OTP.
+     * Registra trazabilidad cuando Angular reporta
+     * una validacion institucional satisfactoria.
+     */
+    @PostMapping("/{token}/otp-validado")
+    public ResponseEntity<
+            ApiResponse<Boolean>>
+    registrarOtpValidado(
+            @PathVariable String token,
+            HttpServletRequest httpServletRequest
+    ) {
+
+        try {
+
+            String ipOrigen =
+                    obtenerIpOrigen(
+                            httpServletRequest
+                    );
+
+            String datosSesionDispositivo =
+                    obtenerDatosSesionDispositivo(
+                            httpServletRequest
+                    );
+
+            entregaLoteService
+                    .registrarOtpValidadoPorToken(
+                            token,
+                            ipOrigen,
+                            datosSesionDispositivo
+                    );
+
+            return ResponseEntity.ok(
+                    ApiResponse.exito(
+                            "Validacion OTP registrada correctamente.",
+                            Boolean.TRUE
+                    )
+            );
+
+        } catch (IllegalArgumentException e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.NOT_FOUND)
+                    .body(
+                            ApiResponse.error(
+                                    "La entrega solicitada no existe o el enlace no es valido.",
+                                    null
+                            )
+                    );
+
+        } catch (EstadoEntregaException e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.CONFLICT)
+                    .body(
+                            ApiResponse.error(
+                                    e.getMessage(),
+                                    null
+                            )
+                    );
+
+        } catch (IllegalStateException e) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.INTERNAL_SERVER_ERROR
+                    )
+                    .body(
+                            ApiResponse.error(
+                                    "No fue posible registrar la validacion OTP.",
+                                    null
+                            )
+                    );
+        }
+    }
+
+    /*
+     * Angular llama a este endpoint solamente despues de
+     * recibir completamente el Blob del ZIP.
+     *
+     * Igual que OTP_VALIDADO, representa trazabilidad
+     * reportada por la aplicacion; no prueba que Windows
+     * haya guardado, abierto o leido fisicamente el archivo.
+     */
+    @PostMapping("/{token}/descarga-completada")
+    public ResponseEntity<
+            ApiResponse<Boolean>>
+    registrarDescargaCompletada(
+            @PathVariable String token,
+            HttpServletRequest httpServletRequest
+    ) {
+
+        try {
+
+            String ipOrigen =
+                    obtenerIpOrigen(
+                            httpServletRequest
+                    );
+
+            String datosSesionDispositivo =
+                    obtenerDatosSesionDispositivo(
+                            httpServletRequest
+                    );
+
+            entregaLoteService
+                    .registrarDescargaCompletadaPorToken(
+                            token,
+                            ipOrigen,
+                            datosSesionDispositivo
+                    );
+
+            return ResponseEntity.ok(
+                    ApiResponse.exito(
+                            "Descarga completa del lote registrada correctamente.",
+                            Boolean.TRUE
+                    )
+            );
+
+        } catch (IllegalArgumentException e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.NOT_FOUND)
+                    .body(
+                            ApiResponse.error(
+                                    "La entrega solicitada no existe o el enlace no es valido.",
+                                    null
+                            )
+                    );
+
+        } catch (EstadoEntregaException e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.CONFLICT)
+                    .body(
+                            ApiResponse.error(
+                                    e.getMessage(),
+                                    null
+                            )
+                    );
+
+        } catch (IllegalStateException e) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.INTERNAL_SERVER_ERROR
+                    )
+                    .body(
+                            ApiResponse.error(
+                                    "No fue posible registrar la descarga del lote.",
+                                    null
+                            )
+                    );
+        }
+    }
+
     @PostMapping("/{token}/confirmar")
     public ResponseEntity<
             ApiResponse<ConfirmarAcuseEntregaResponse>>

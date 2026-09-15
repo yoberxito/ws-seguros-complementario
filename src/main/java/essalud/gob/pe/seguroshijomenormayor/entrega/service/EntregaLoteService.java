@@ -7,6 +7,7 @@ import essalud.gob.pe.seguroshijomenormayor.entrega.exception.EstadoEntregaExcep
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.EntregaLote;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.PreparacionEntregaLote;
 import essalud.gob.pe.seguroshijomenormayor.entrega.repository.EntregaLoteRepository;
+import essalud.gob.pe.seguroshijomenormayor.lote.service.PublicacionDrivePersonalService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,10 @@ public class EntregaLoteService {
     private static final String
             ESTADO_ACUSE_REGISTRADO =
             "ACUSE_REGISTRADO";
+
+    private static final String
+            DESTINATARIO_PERSONAL =
+            "PERSONAL";
 
     private static final String
             ESTADO_NOTIFICACION_PENDIENTE =
@@ -57,19 +62,27 @@ public class EntregaLoteService {
     private final EntregaLoteTransicionService
             entregaLoteTransicionService;
 
+    private final PublicacionDrivePersonalService
+            publicacionDrivePersonalService;
+
     private final SecureRandom secureRandom =
             new SecureRandom();
 
     public EntregaLoteService(
             EntregaLoteRepository entregaLoteRepository,
             EntregaLoteTransicionService
-                    entregaLoteTransicionService
+                    entregaLoteTransicionService,
+            PublicacionDrivePersonalService
+                    publicacionDrivePersonalService
     ) {
         this.entregaLoteRepository =
                 entregaLoteRepository;
 
         this.entregaLoteTransicionService =
                 entregaLoteTransicionService;
+
+        this.publicacionDrivePersonalService =
+                publicacionDrivePersonalService;
     }
 
     /*
@@ -279,9 +292,123 @@ public class EntregaLoteService {
         EntregaLote entrega =
                 resolverEntregaPorToken(token);
 
+        String tokenHash =
+                calcularTokenHash(token);
+
         return convertirAResponse(
-                entrega
+                entrega,
+                tokenHash
         );
+    }
+
+    public void registrarOtpValidadoPorToken(
+            String token,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        validarToken(token);
+
+        String tokenHash =
+                calcularTokenHash(token);
+
+        EntregaLote entrega =
+                entregaLoteRepository
+                        .buscarPorTokenHash(
+                                tokenHash
+                        )
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "La entrega solicitada no existe."
+                                        )
+                        );
+
+        if (
+                entrega.getFechaPublicacion()
+                        == null
+        ) {
+            throw new EstadoEntregaException(
+                    "El lote todavia no se encuentra publicado."
+            );
+        }
+
+        if (
+                entrega.getFechaAcuse()
+                        != null
+        ) {
+            throw new EstadoEntregaException(
+                    "La recepcion del lote ya se encuentra registrada."
+            );
+        }
+
+        entregaLoteTransicionService
+                .registrarOtpValidado(
+                        tokenHash,
+                        limitarNullable(
+                                ipOrigen,
+                                64
+                        ),
+                        limitarNullable(
+                                datosSesionDispositivo,
+                                1000
+                        )
+                );
+    }
+
+    public void registrarDescargaCompletadaPorToken(
+            String token,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        validarToken(token);
+
+        String tokenHash =
+                calcularTokenHash(token);
+
+        EntregaLote entrega =
+                entregaLoteRepository
+                        .buscarPorTokenHash(
+                                tokenHash
+                        )
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "La entrega solicitada no existe."
+                                        )
+                        );
+
+        if (
+                entrega.getFechaPublicacion()
+                        == null
+        ) {
+            throw new EstadoEntregaException(
+                    "El lote todavía no se encuentra publicado."
+            );
+        }
+
+        if (
+                entrega.getFechaAcuse()
+                        != null
+        ) {
+            throw new EstadoEntregaException(
+                    "La recepción del lote ya se encuentra registrada."
+            );
+        }
+
+        entregaLoteTransicionService
+                .registrarDescargaLoteCompletada(
+                        tokenHash,
+                        limitarNullable(
+                                ipOrigen,
+                                64
+                        ),
+                        limitarNullable(
+                                datosSesionDispositivo,
+                                1000
+                        )
+                );
     }
 
     public ConfirmarAcuseEntregaResponse
@@ -324,9 +451,29 @@ public class EntregaLoteService {
                 entrega.getFechaAcuse()
                         != null
         ) {
+
+            asegurarPublicacionDrivePostAcuse(
+                    entrega,
+                    tokenHash,
+                    ipOrigen,
+                    datosSesionDispositivo
+            );
+
             return construirRespuestaAcuse(
                     entrega,
+                    tokenHash,
                     true
+            );
+        }
+
+        if (
+                !entregaLoteTransicionService
+                        .existeDescargaLoteCompletada(
+                                tokenHash
+                        )
+        ) {
+            throw new EstadoEntregaException(
+                    "Debe descargar completamente el lote antes de confirmar la recepción."
             );
         }
 
@@ -364,8 +511,16 @@ public class EntregaLoteService {
                     estadoActual.getFechaAcuse()
                             != null
             ) {
+                asegurarPublicacionDrivePostAcuse(
+                        estadoActual,
+                        tokenHash,
+                        ipOrigen,
+                        datosSesionDispositivo
+                );
+
                 return construirRespuestaAcuse(
                         estadoActual,
+                        tokenHash,
                         true
                 );
             }
@@ -406,8 +561,25 @@ public class EntregaLoteService {
             );
         }
 
+        /*
+         * IMPORTANTE:
+         *
+         * El acuse ya fue persistido antes de tocar Drive.
+         *
+         * Si Drive falla desde aqui, el acuse se conserva.
+         * Un nuevo POST /confirmar detectara el acuse existente
+         * y reintentara solamente la publicacion.
+         */
+        asegurarPublicacionDrivePostAcuse(
+                registrada,
+                tokenHash,
+                ipOrigen,
+                datosSesionDispositivo
+        );
+
         return construirRespuestaAcuse(
                 registrada,
+                tokenHash,
                 false
         );
     }
@@ -415,6 +587,7 @@ public class EntregaLoteService {
     private ConfirmarAcuseEntregaResponse
     construirRespuestaAcuse(
             EntregaLote entrega,
+            String tokenHash,
             boolean yaRegistrado
     ) {
 
@@ -426,6 +599,11 @@ public class EntregaLoteService {
                         &&
                         !campoVacio(
                                 entrega.getUrlAcceso()
+                        )
+                        &&
+                        publicacionDisponible(
+                                entrega,
+                                tokenHash
                         );
 
         response.setAcuseRegistrado(
@@ -486,7 +664,8 @@ public class EntregaLoteService {
 
     private ConsultarEntregaPublicaResponse
     convertirAResponse(
-            EntregaLote entrega
+            EntregaLote entrega,
+            String tokenHash
     ) {
 
         ConsultarEntregaPublicaResponse response =
@@ -499,6 +678,12 @@ public class EntregaLoteService {
         boolean acuseRegistrado =
                 entrega.getFechaAcuse()
                         != null;
+
+        boolean descargaRegistrada =
+                entregaLoteTransicionService
+                        .existeDescargaLoteCompletada(
+                                tokenHash
+                        );
 
         String textoAcusePublico;
         String versionTextoAcusePublico;
@@ -536,6 +721,11 @@ public class EntregaLoteService {
                         &&
                         !campoVacio(
                                 entrega.getUrlAcceso()
+                        )
+                        &&
+                        publicacionDisponible(
+                                entrega,
+                                tokenHash
                         );
 
         response.setDestinatario(
@@ -566,6 +756,10 @@ public class EntregaLoteService {
 
         response.setAcuseRegistrado(
                 acuseRegistrado
+        );
+
+        response.setDescargaRegistrada(
+                descargaRegistrada
         );
 
         response.setAccesoDisponible(
@@ -600,6 +794,102 @@ public class EntregaLoteService {
         );
 
         return response;
+    }
+
+    private void asegurarPublicacionDrivePostAcuse(
+            EntregaLote entrega,
+            String tokenHash,
+            String ipOrigen,
+            String datosSesionDispositivo
+    ) {
+
+        if (!esPersonal(entrega)) {
+            return;
+        }
+
+        if (
+                entrega.getFechaAcuse()
+                        == null
+        ) {
+            throw new IllegalStateException(
+                    "No se puede publicar Drive antes del acuse."
+            );
+        }
+
+        if (
+                entregaLoteTransicionService
+                        .existePublicacionDriveCompletada(
+                                tokenHash
+                        )
+        ) {
+            return;
+        }
+
+        publicacionDrivePersonalService
+                .publicarPeriodoPersonal(
+                        entrega.getUrlAcceso(),
+                        entrega.getFechaInicioPeriodo(),
+                        entrega.getFechaFinPeriodo()
+                );
+
+        entregaLoteTransicionService
+                .registrarPublicacionDriveCompletada(
+                        tokenHash,
+                        limitarNullable(
+                                ipOrigen,
+                                64
+                        ),
+                        limitarNullable(
+                                datosSesionDispositivo,
+                                1000
+                        )
+                );
+
+        if (
+                !entregaLoteTransicionService
+                        .existePublicacionDriveCompletada(
+                                tokenHash
+                        )
+        ) {
+            throw new IllegalStateException(
+                    "La publicacion Drive termino, pero no pudo confirmarse su trazabilidad."
+            );
+        }
+    }
+
+    private boolean publicacionDisponible(
+            EntregaLote entrega,
+            String tokenHash
+    ) {
+
+        /*
+         * MAPFRE conserva su semantica existente.
+         *
+         * El nuevo gate se aplica unicamente a PERSONAL.
+         */
+        if (!esPersonal(entrega)) {
+            return true;
+        }
+
+        return entregaLoteTransicionService
+                .existePublicacionDriveCompletada(
+                        tokenHash
+                );
+    }
+
+    private boolean esPersonal(
+            EntregaLote entrega
+    ) {
+
+        return entrega != null
+                &&
+                entrega.getTipoDestinatario() != null
+                &&
+                DESTINATARIO_PERSONAL.equalsIgnoreCase(
+                        entrega
+                                .getTipoDestinatario()
+                                .trim()
+                );
     }
 
     private String determinarEstadoEntrega(

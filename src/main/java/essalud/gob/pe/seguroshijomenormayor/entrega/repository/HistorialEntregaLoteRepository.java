@@ -11,4 +11,9 @@ public interface HistorialEntregaLoteRepository {
             String ipOrigen,
             String datosSesionDispositivo
     );
+
+    boolean existeEvento(
+            String tokenHash,
+            String tipoEvento
+    );
 }

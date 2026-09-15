@@ -18,6 +18,7 @@ public class ConsultarEntregaPublicaResponse {
     private String estadoEntrega;
 
     private boolean acuseRegistrado;
+    private boolean descargaRegistrada;
     private boolean accesoDisponible;
 
     private String urlAcceso;
@@ -115,6 +116,17 @@ public class ConsultarEntregaPublicaResponse {
             boolean acuseRegistrado
     ) {
         this.acuseRegistrado = acuseRegistrado;
+    }
+
+    public boolean isDescargaRegistrada() {
+        return descargaRegistrada;
+    }
+
+    public void setDescargaRegistrada(
+            boolean descargaRegistrada
+    ) {
+        this.descargaRegistrada =
+                descargaRegistrada;
     }
 
     public boolean isAccesoDisponible() {

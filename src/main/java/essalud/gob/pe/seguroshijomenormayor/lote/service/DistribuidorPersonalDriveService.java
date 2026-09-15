@@ -32,9 +32,6 @@ import java.util.Map;
 @Service
 public class DistribuidorPersonalDriveService {
 
-    private static final String
-            CARPETA_FINAL_PERSONAL =
-            "Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud";
 
     private final GoogleDriveService
             googleDriveService;
@@ -75,23 +72,21 @@ public class DistribuidorPersonalDriveService {
             return List.of();
         }
 
+        /*
+         * A3:
+         *
+         * La primera entrega PERSONAL se construye siempre bajo
+         * una raiz Pending privada previamente configurada.
+         *
+         * No existe fallback al folderId historico/general:
+         * si Pending no esta configurado, el proceso debe fallar.
+         */
         String rootId =
                 requerir(
-                        googleDriveProperties.getFolderId(),
-                        "google.drive.folder-id es obligatorio."
+                        googleDriveProperties
+                                .getPersonalPendingFolderId(),
+                        "google.drive.personal-pending-folder-id es obligatorio."
                 );
-
-        File carpetaPersonal =
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                CARPETA_FINAL_PERSONAL,
-                                rootId
-                        );
-
-        validarCarpeta(
-                carpetaPersonal,
-                "No se pudo resolver la carpeta raiz PERSONAL."
-        );
 
         String nombrePeriodo =
                 fechaInicio
@@ -126,7 +121,7 @@ public class DistribuidorPersonalDriveService {
                                     construirNombreCarpetaDestino(
                                             grupo.getDestino()
                                     ),
-                                    carpetaPersonal.getId()
+                                    rootId
                             );
 
             validarCarpeta(

@@ -13,5 +13,17 @@ public class GoogleDriveProperties {
     private String clientEmail;
     private String privateKey;
     private String folderId;
+
+    /*
+     * PERSONAL multidestino.
+     *
+     * Estos IDs deben apuntar a carpetas Drive YA configuradas
+     * con los permisos institucionales correspondientes.
+     *
+     * El backend no administra permisos Drive.
+     */
+    private String personalPendingFolderId;
+    private String personalHistoricalFolderId;
+
     private String clientId;
 }

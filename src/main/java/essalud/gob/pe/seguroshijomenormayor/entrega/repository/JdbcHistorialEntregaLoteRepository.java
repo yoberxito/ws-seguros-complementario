@@ -75,4 +75,35 @@ public class JdbcHistorialEntregaLoteRepository
             );
         }
     }
+
+    @Override
+    public boolean existeEvento(
+            String tokenHash,
+            String tipoEvento
+    ) {
+
+        String sql = """
+                SELECT COUNT(1)
+
+                FROM HISTORIAL_ENTREGA_LOTE H
+
+                INNER JOIN ENTREGA_LOTE E
+                    ON E.ID_ENTREGA = H.ID_ENTREGA
+
+                WHERE E.TOKEN_HASH = ?
+                  AND H.TIPO_EVENTO = ?
+                  AND H.RESULTADO_EVENTO = 'OK'
+                """;
+
+        Integer cantidad =
+                jdbcTemplate.queryForObject(
+                        sql,
+                        Integer.class,
+                        tokenHash,
+                        tipoEvento
+                );
+
+        return cantidad != null
+                && cantidad > 0;
+    }
 }
