@@ -272,15 +272,102 @@ public class ReporteQuincenalLoteVidaService {
          * - el Excel fue generado;
          * - Drive confirmó el almacenamiento del Excel.
          */
-        ResultadoCierreDrive cierreResultado =
-                cierreDrive
-                        .cerrarCarpetaPeriodo(
-                                destino,
-                                fechaInicio,
-                                fechaFin,
-                                carpetaPeriodo.getId(),
-                                filas.size()
-                        );
+        String idCarpetaEntrega;
+        String urlCarpetaEntrega;
+
+        /*
+         * MAPFRE debe permanecer en Preparacion hasta completar:
+         *
+         * OTP -> descarga -> acuse.
+         *
+         * La derivacion final de MAPFRE ocurre despues del acuse.
+         *
+         * PERSONAL conserva el comportamiento ya existente
+         * de este servicio.
+         */
+        if (DESTINO_MAPFRE.equals(destino)) {
+
+            /*
+             * La identidad real del lote es el ID de la carpeta
+             * de Preparacion.
+             *
+             * El movimiento post-acuse conserva este mismo ID.
+             */
+            idCarpetaEntrega =
+                    carpetaPeriodo
+                            .getId()
+                            .trim();
+
+            /*
+             * Drive puede devolver webViewLink al consultar
+             * metadata completa.
+             *
+             * Sin embargo, URL_ACCESO no debe depender de que
+             * ese campo opcional venga informado: el ID ya fue
+             * resuelto y validado previamente.
+             */
+            File carpetaEntrega =
+                    googleDriveService
+                            .obtenerInformacionArchivo(
+                                    idCarpetaEntrega
+                            );
+
+            if (
+                    carpetaEntrega != null
+                            &&
+                    !campoVacio(
+                            carpetaEntrega.getId()
+                    )
+                            &&
+                    !idCarpetaEntrega.equals(
+                            carpetaEntrega
+                                    .getId()
+                                    .trim()
+                    )
+            ) {
+                throw new IllegalStateException(
+                        "Google Drive devolvio una carpeta MAPFRE distinta a la esperada."
+                );
+            }
+
+            if (
+                    carpetaEntrega != null
+                            &&
+                    !campoVacio(
+                            carpetaEntrega.getWebViewLink()
+                    )
+            ) {
+
+                urlCarpetaEntrega =
+                        carpetaEntrega
+                                .getWebViewLink()
+                                .trim();
+
+            } else {
+
+                urlCarpetaEntrega =
+                        "https://drive.google.com/drive/folders/"
+                                + idCarpetaEntrega;
+            }
+
+        } else {
+
+            ResultadoCierreDrive cierreResultado =
+                    cierreDrive
+                            .cerrarCarpetaPeriodo(
+                                    destino,
+                                    fechaInicio,
+                                    fechaFin,
+                                    carpetaPeriodo.getId(),
+                                    filas.size()
+                            );
+
+            idCarpetaEntrega =
+                    cierreResultado.getIdCarpetaFinal();
+
+            urlCarpetaEntrega =
+                    cierreResultado.getUrlCarpetaFinal();
+        }
 
         log.info(
                 "Reporte quincenal +Vida generado. "
@@ -291,7 +378,7 @@ public class ReporteQuincenalLoteVidaService {
                 fechaInicio,
                 fechaFin,
                 filas.size(),
-                cierreResultado.getIdCarpetaFinal(),
+                idCarpetaEntrega,
                 reporteDrive.getId()
         );
 
@@ -300,8 +387,8 @@ public class ReporteQuincenalLoteVidaService {
                 fechaInicio,
                 fechaFin,
                 filas.size(),
-                cierreResultado.getIdCarpetaFinal(),
-                cierreResultado.getUrlCarpetaFinal(),
+                idCarpetaEntrega,
+                urlCarpetaEntrega,
                 reporteDrive.getId(),
                 reporteDrive.getName(),
                 reporteDrive.getWebViewLink()

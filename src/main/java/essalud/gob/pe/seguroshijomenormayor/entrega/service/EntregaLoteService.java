@@ -7,10 +7,14 @@ import essalud.gob.pe.seguroshijomenormayor.entrega.exception.EstadoEntregaExcep
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.EntregaLote;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.PreparacionEntregaLote;
 import essalud.gob.pe.seguroshijomenormayor.entrega.repository.EntregaLoteRepository;
+import essalud.gob.pe.seguroshijomenormayor.lote.service.CierreDriveLoteVidaService;
 import essalud.gob.pe.seguroshijomenormayor.lote.service.PublicacionDrivePersonalService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -35,6 +39,10 @@ public class EntregaLoteService {
     private static final String
             DESTINATARIO_PERSONAL =
             "PERSONAL";
+
+    private static final String
+            DESTINATARIO_MAPFRE =
+            "MAPFRE";
 
     private static final String
             ESTADO_NOTIFICACION_PENDIENTE =
@@ -65,15 +73,21 @@ public class EntregaLoteService {
     private final PublicacionDrivePersonalService
             publicacionDrivePersonalService;
 
+    private final CierreDriveLoteVidaService
+            cierreDriveLoteVidaService;
+
     private final SecureRandom secureRandom =
             new SecureRandom();
 
+    @Autowired
     public EntregaLoteService(
             EntregaLoteRepository entregaLoteRepository,
             EntregaLoteTransicionService
                     entregaLoteTransicionService,
             PublicacionDrivePersonalService
-                    publicacionDrivePersonalService
+                    publicacionDrivePersonalService,
+            CierreDriveLoteVidaService
+                    cierreDriveLoteVidaService
     ) {
         this.entregaLoteRepository =
                 entregaLoteRepository;
@@ -83,6 +97,25 @@ public class EntregaLoteService {
 
         this.publicacionDrivePersonalService =
                 publicacionDrivePersonalService;
+
+        this.cierreDriveLoteVidaService =
+                cierreDriveLoteVidaService;
+    }
+
+
+    public EntregaLoteService(
+            EntregaLoteRepository entregaLoteRepository,
+            EntregaLoteTransicionService
+                    entregaLoteTransicionService,
+            PublicacionDrivePersonalService
+                    publicacionDrivePersonalService
+    ) {
+        this(
+                entregaLoteRepository,
+                entregaLoteTransicionService,
+                publicacionDrivePersonalService,
+                null
+        );
     }
 
     /*
@@ -803,8 +836,14 @@ public class EntregaLoteService {
             String datosSesionDispositivo
     ) {
 
-        if (!esPersonal(entrega)) {
-            return;
+        if (
+                !esPersonal(entrega)
+                        &&
+                !esMapfre(entrega)
+        ) {
+            throw new IllegalStateException(
+                    "El destinatario de la entrega no puede publicarse en Drive."
+            );
         }
 
         if (
@@ -816,6 +855,23 @@ public class EntregaLoteService {
             );
         }
 
+        /*
+         * Compatibilidad con MAPFRE historico.
+         *
+         * Las entregas antiguas no registraban
+         * DESCARGA_LOTE_COMPLETADA y ya estaban derivadas.
+         */
+        if (
+                esMapfre(entrega)
+                        &&
+                !entregaLoteTransicionService
+                        .existeDescargaLoteCompletada(
+                                tokenHash
+                        )
+        ) {
+            return;
+        }
+
         if (
                 entregaLoteTransicionService
                         .existePublicacionDriveCompletada(
@@ -825,12 +881,47 @@ public class EntregaLoteService {
             return;
         }
 
-        publicacionDrivePersonalService
-                .publicarPeriodoPersonal(
-                        entrega.getUrlAcceso(),
-                        entrega.getFechaInicioPeriodo(),
-                        entrega.getFechaFinPeriodo()
+        if (esPersonal(entrega)) {
+
+            publicacionDrivePersonalService
+                    .publicarPeriodoPersonal(
+                            entrega.getUrlAcceso(),
+                            entrega.getFechaInicioPeriodo(),
+                            entrega.getFechaFinPeriodo()
+                    );
+
+        } else {
+
+            String folderId =
+                    extraerFolderIdDrive(
+                            entrega.getUrlAcceso()
+                    );
+
+            if (cierreDriveLoteVidaService == null) {
+                throw new IllegalStateException(
+                        "El servicio de derivacion MAPFRE no se encuentra disponible."
                 );
+            }
+
+            try {
+
+                cierreDriveLoteVidaService
+                        .cerrarCarpetaPeriodo(
+                                DESTINATARIO_MAPFRE,
+                                entrega.getFechaInicioPeriodo(),
+                                entrega.getFechaFinPeriodo(),
+                                folderId,
+                                entrega.getCantidadDocumentos()
+                        );
+
+            } catch (IOException e) {
+
+                throw new IllegalStateException(
+                        "El acuse MAPFRE fue registrado, pero no fue posible derivar el lote hacia su carpeta final.",
+                        e
+                );
+            }
+        }
 
         entregaLoteTransicionService
                 .registrarPublicacionDriveCompletada(
@@ -857,25 +948,145 @@ public class EntregaLoteService {
         }
     }
 
+
+
     private boolean publicacionDisponible(
             EntregaLote entrega,
             String tokenHash
     ) {
 
-        /*
-         * MAPFRE conserva su semantica existente.
-         *
-         * El nuevo gate se aplica unicamente a PERSONAL.
-         */
-        if (!esPersonal(entrega)) {
+        if (
+                entregaLoteTransicionService
+                        .existePublicacionDriveCompletada(
+                                tokenHash
+                        )
+        ) {
             return true;
         }
 
-        return entregaLoteTransicionService
-                .existePublicacionDriveCompletada(
-                        tokenHash
+        /*
+         * Compatibilidad con MAPFRE historico:
+         * antes del nuevo flujo no existia evento de descarga
+         * ni evento de publicacion post-acuse.
+         */
+        if (
+                esMapfre(entrega)
+                        &&
+                entrega.getFechaAcuse() != null
+                        &&
+                !entregaLoteTransicionService
+                        .existeDescargaLoteCompletada(
+                                tokenHash
+                        )
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    private boolean esMapfre(
+            EntregaLote entrega
+    ) {
+
+        return entrega != null
+                &&
+                entrega.getTipoDestinatario() != null
+                &&
+                DESTINATARIO_MAPFRE.equalsIgnoreCase(
+                        entrega
+                                .getTipoDestinatario()
+                                .trim()
                 );
     }
+
+
+    private String extraerFolderIdDrive(
+            String urlAcceso
+    ) {
+
+        if (campoVacio(urlAcceso)) {
+            throw new IllegalStateException(
+                    "La entrega no cuenta con URL_ACCESO Drive."
+            );
+        }
+
+        final URI uri;
+
+        try {
+
+            uri =
+                    URI.create(
+                            urlAcceso.trim()
+                    );
+
+        } catch (IllegalArgumentException e) {
+
+            throw new IllegalStateException(
+                    "URL_ACCESO no contiene una URL Drive valida.",
+                    e
+            );
+        }
+
+        if (
+                uri.getHost() == null
+                        ||
+                !"drive.google.com"
+                        .equalsIgnoreCase(
+                                uri.getHost()
+                        )
+        ) {
+            throw new IllegalStateException(
+                    "URL_ACCESO no pertenece a Google Drive."
+            );
+        }
+
+        String path =
+                uri.getPath();
+
+        if (campoVacio(path)) {
+            throw new IllegalStateException(
+                    "URL_ACCESO no contiene una ruta Drive valida."
+            );
+        }
+
+        String[] segmentos =
+                path.split("/");
+
+        for (
+                int i = 0;
+                i < segmentos.length - 1;
+                i++
+        ) {
+
+            if (
+                    "folders".equals(
+                            segmentos[i]
+                    )
+            ) {
+
+                String folderId =
+                        segmentos[i + 1];
+
+                if (
+                        folderId != null
+                                &&
+                        folderId.matches(
+                                "[A-Za-z0-9_-]+"
+                        )
+                ) {
+                    return folderId;
+                }
+            }
+        }
+
+        throw new IllegalStateException(
+                "No fue posible obtener el identificador de carpeta desde URL_ACCESO."
+        );
+    }
+
+
 
     private boolean esPersonal(
             EntregaLote entrega

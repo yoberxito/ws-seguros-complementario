@@ -40,7 +40,7 @@ public class EntregaLoteTransicionService {
 
     private static final String
             DESCRIPCION_PUBLICACION_DRIVE_COMPLETADA =
-            "Publicacion del lote PERSONAL en Drive completada correctamente.";
+            "Publicacion del lote en Drive completada correctamente.";
 
     private static final String
             DESCRIPCION_ACUSE_REGISTRADO =

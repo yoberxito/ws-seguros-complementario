@@ -33,8 +33,14 @@ public class DescargaLoteService {
     private static final String DESTINO_PERSONAL =
             "PERSONAL";
 
+    private static final String DESTINO_MAPFRE =
+            "MAPFRE";
+
     private static final String ID_TP_DOC_PERSONAL =
             "247";
+
+    private static final String ID_TP_DOC_MAPFRE =
+            "244";
 
     private static final String MIME_TYPE_FOLDER =
             "application/vnd.google-apps.folder";
@@ -91,6 +97,16 @@ public class DescargaLoteService {
                 entrega
         );
 
+        String destino =
+                normalizarDestinatario(
+                        entrega.getTipoDestinatario()
+                );
+
+        String idTpDocEsperado =
+                resolverIdTpDoc(
+                        destino
+                );
+
         try {
 
             String folderId =
@@ -124,7 +140,7 @@ public class DescargaLoteService {
                 );
             }
 
-            List<File> documentos247 =
+            List<File> documentosLote =
                     new ArrayList<>();
 
             List<File> candidatosReporte =
@@ -142,11 +158,9 @@ public class DescargaLoteService {
                         );
 
                 if (
-                        ID_TP_DOC_PERSONAL.equals(
-                                idTpDoc
-                        )
+                        idTpDocEsperado.equals(idTpDoc)
                 ) {
-                    documentos247.add(
+                    documentosLote.add(
                             archivo
                     );
                     continue;
@@ -157,7 +171,7 @@ public class DescargaLoteService {
                                 && !idTpDoc.isEmpty()
                 ) {
                     throw new IllegalStateException(
-                            "La carpeta PERSONAL contiene un documento "
+                            "La carpeta " + destino + " contiene un documento "
                                     + "institucional de tipo inesperado: "
                                     + idTpDoc
                                     + "."
@@ -179,12 +193,12 @@ public class DescargaLoteService {
             }
 
             if (
-                    documentos247.size()
+                    documentosLote.size()
                             != entrega
                                     .getCantidadDocumentos()
             ) {
                 throw new IllegalStateException(
-                        "La cantidad de documentos 247 en Drive no coincide "
+                        "La cantidad de documentos " + idTpDocEsperado + " en Drive no coincide "
                                 + "con CANTIDAD_DOCUMENTOS de la entrega."
                 );
             }
@@ -220,7 +234,7 @@ public class DescargaLoteService {
                     contenidoReporte
             );
 
-            documentos247.sort(
+            documentosLote.sort(
                     Comparator.comparing(
                             File::getName,
                             String.CASE_INSENSITIVE_ORDER
@@ -231,7 +245,7 @@ public class DescargaLoteService {
                     construirZip(
                             reporte,
                             contenidoReporte,
-                            documentos247
+                            documentosLote
                     );
 
             String nombreZip =
@@ -256,7 +270,7 @@ public class DescargaLoteService {
     private byte[] construirZip(
             File reporte,
             byte[] contenidoReporte,
-            List<File> documentos247
+            List<File> documentosLote
     ) throws IOException {
 
         Set<String> nombresUsados =
@@ -279,7 +293,7 @@ public class DescargaLoteService {
                     nombresUsados
             );
 
-            for (File documento : documentos247) {
+            for (File documento : documentosLote) {
 
                 byte[] contenido =
                         googleDriveService
@@ -666,9 +680,13 @@ public class DescargaLoteService {
                 !DESTINO_PERSONAL.equalsIgnoreCase(
                         entrega.getTipoDestinatario()
                 )
+                        &&
+                !DESTINO_MAPFRE.equalsIgnoreCase(
+                        entrega.getTipoDestinatario()
+                )
         ) {
             throw new EstadoEntregaException(
-                    "La descarga ZIP controlada solamente aplica a PERSONAL."
+                    "La descarga ZIP controlada solamente aplica a PERSONAL o MAPFRE."
             );
         }
 
@@ -690,11 +708,60 @@ public class DescargaLoteService {
         }
     }
 
+    private String resolverIdTpDoc(
+            String destino
+    ) {
+
+        if (DESTINO_MAPFRE.equals(destino)) {
+            return ID_TP_DOC_MAPFRE;
+        }
+
+        return ID_TP_DOC_PERSONAL;
+    }
+
+
+    private String normalizarDestinatario(
+            String destinatario
+    ) {
+
+        if (campoVacio(destinatario)) {
+            throw new EstadoEntregaException(
+                    "La entrega no cuenta con destinatario."
+            );
+        }
+
+        String destino =
+                destinatario
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+        if (
+                !DESTINO_PERSONAL.equals(destino)
+                        &&
+                !DESTINO_MAPFRE.equals(destino)
+        ) {
+            throw new EstadoEntregaException(
+                    "El destinatario de la entrega debe ser PERSONAL o MAPFRE."
+            );
+        }
+
+        return destino;
+    }
+
     private String construirNombreZip(
             EntregaLote entrega
     ) {
 
-        return "Lote_Mas_Vida_PERSONAL_"
+        String destino =
+                normalizarDestinatario(
+                        entrega.getTipoDestinatario()
+                );
+
+        return "Lote_Mas_Vida_"
+                + destino
+                + "_"
                 + entrega.getFechaInicioPeriodo()
                 + "_"
                 + entrega.getFechaFinPeriodo()
