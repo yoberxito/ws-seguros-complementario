@@ -121,6 +121,20 @@ public class ReporteQuincenalLoteVidaService {
                         idTpDoc
                 );
 
+        if (documentosDrive.isEmpty()) {
+
+            throw new IllegalStateException(
+                    "El período "
+                            + fechaInicio
+                            + " a "
+                            + fechaFin
+                            + " no contiene documentos "
+                            + destino
+                            + " para procesar. "
+                            + "No se generará un reporte vacío."
+            );
+        }
+
         List<FilaReporteLoteVida> filas =
                 new ArrayList<>();
 

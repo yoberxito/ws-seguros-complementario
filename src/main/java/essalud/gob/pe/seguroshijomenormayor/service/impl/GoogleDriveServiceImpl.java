@@ -82,14 +82,14 @@ public class GoogleDriveServiceImpl
                 );
 
         /*
-         * Conserva por ahora la lógica de distribución
-         * que existe actualmente en el proyecto de Yober.
-         *
-         * La distinción específica PERSONAL será integrada
-         * en su cambio correspondiente.
+         * La carpeta de preparación se determina según
+         * el calendario del tipo documental:
+         * 244 MAPFRE y 247 PERSONAL.
          */
         String nombreCarpetaQuincena =
-                obtenerNombreCarpetaQuincenaActual();
+                obtenerNombreCarpetaQuincenaActual(
+                        idTpDoc
+                );
 
         File carpetaQuincena =
                 obtenerOCrearCarpeta(
@@ -1111,48 +1111,114 @@ public class GoogleDriveServiceImpl
 
 
     /*
-     * Se conserva intencionalmente la lógica actual
-     * del uploader de Yober.
+     * ==========================================================
+     * PERÍODO DE PREPARACIÓN SEGÚN TIPO DOCUMENTAL
+     * ==========================================================
      *
-     * MAPFRE coincide con 01-15 / 16-fin.
+     * MAPFRE - 244:
+     * 01-15 / 16-fin de mes
      *
-     * El ajuste específico de PERSONAL no se realiza
-     * aquí porque corresponde al cambio de distribución
-     * que Yober indicó que integrará.
+     * PERSONAL - 247:
+     * 04-18 / 19-03 del mes siguiente
+     *
+     * La carpeta de preparación debe utilizar exactamente
+     * el mismo período que posteriormente consumirá el job.
      */
-    private String obtenerNombreCarpetaQuincenaActual() {
+
+    private String obtenerNombreCarpetaQuincenaActual(
+            String idTpDoc
+    ) {
+
+        validarIdTpDoc(
+                idTpDoc
+        );
 
         LocalDate fecha =
                 LocalDate.now(
                         ZONA_LIMA
                 );
 
-        YearMonth yearMonth =
-                YearMonth.from(
-                        fecha
-                );
+        String tipoDocumento =
+                idTpDoc.trim();
 
         LocalDate inicio;
         LocalDate fin;
 
-        if (
-                fecha.getDayOfMonth()
-                        <= 15
-        ) {
+        /*
+         * MAPFRE - Formulario 6012
+         *
+         * 01 -> 15
+         * 16 -> fin de mes
+         */
+        if ("244".equals(tipoDocumento)) {
 
-            inicio =
-                    yearMonth.atDay(1);
+            YearMonth yearMonth =
+                    YearMonth.from(
+                            fecha
+                    );
 
-            fin =
-                    yearMonth.atDay(15);
+            if (
+                    fecha.getDayOfMonth()
+                            <= 15
+            ) {
 
+                inicio =
+                        yearMonth.atDay(1);
+
+                fin =
+                        yearMonth.atDay(15);
+
+            } else {
+
+                inicio =
+                        yearMonth.atDay(16);
+
+                fin =
+                        yearMonth.atEndOfMonth();
+            }
+
+            /*
+             * PERSONAL - Autorizacion 247
+             *
+             * 04 -> 18
+             * 19 -> 03 del mes siguiente
+             */
         } else {
 
-            inicio =
-                    yearMonth.atDay(16);
+            int dia =
+                    fecha.getDayOfMonth();
 
-            fin =
-                    yearMonth.atEndOfMonth();
+            if (
+                    dia >= 4
+                            && dia <= 18
+            ) {
+
+                inicio =
+                        fecha.withDayOfMonth(4);
+
+                fin =
+                        fecha.withDayOfMonth(18);
+
+            } else if (dia >= 19) {
+
+                inicio =
+                        fecha.withDayOfMonth(19);
+
+                fin =
+                        fecha
+                                .plusMonths(1)
+                                .withDayOfMonth(3);
+
+            } else {
+
+                inicio =
+                        fecha
+                                .minusMonths(1)
+                                .withDayOfMonth(19);
+
+                fin =
+                        fecha.withDayOfMonth(3);
+            }
         }
 
         return inicio
