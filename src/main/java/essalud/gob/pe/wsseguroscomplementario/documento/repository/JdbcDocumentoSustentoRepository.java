@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.io.StringReader;
-import java.util.Optional;
 import org.springframework.dao.EmptyResultDataAccessException;
 
 @Repository
@@ -108,7 +107,7 @@ public class JdbcDocumentoSustentoRepository
 
         if (filasActualizadas == 0) {
             throw new IllegalArgumentException(
-                    "No se encontró metadata documental persistida para registrar la carga del PDF firmado."
+                    "No se encontrÃ³ metadata documental persistida para registrar la carga del PDF firmado."
             );
         }
     }
@@ -165,7 +164,7 @@ public class JdbcDocumentoSustentoRepository
 
         validarActualizacionDocumental(
                 filasActualizadas,
-                "registrar la validación aprobada"
+                "registrar la validaciÃ³n aprobada"
         );
     }
 
@@ -231,216 +230,8 @@ public class JdbcDocumentoSustentoRepository
 
         validarActualizacionDocumental(
                 filasActualizadas,
-                "registrar la validación rechazada"
+                "registrar la validaciÃ³n rechazada"
         );
-    }
-
-    @Override
-    public void registrarResultadoSftp(
-            DocumentoPublicado documentoPublicado
-    ) {
-
-        String sql = """
-        UPDATE DOCUMENTOS_SUSTENTO D
-        SET
-            D.ID_DOCUMENTO_PUBLICADO = ?,
-            D.NOMBRE_ARCHIVO_FINAL = ?,
-            D.RUTA_ARCHIVO = ?,
-            D.HASH_DOCUMENT_FINAL = ?,
-            D.FECHA_PUBLICACION = ?,
-            D.FECHA_ACTUALIZACION =
-                SYSTIMESTAMP
-
-        WHERE D.ID_SECOMASVIDA = (
-            SELECT T.ID_SECOMASVIDA
-            FROM TEMP_SECOMASVIDA T
-            WHERE T.REGISTRO_INTERNO_PROCESO = ?
-        )
-
-        AND D.TIPO_DOCUMENTO_LOGICO = ?
-
-        AND D.ID_ESTADO_SUSTENTO <> (
-            SELECT E.ID_ESTADO_SUSTENTO
-            FROM ESTADO_SUSTENTO E
-            WHERE E.COD_ESTADO_DOCUMENTO =
-                'PUBLICADO'
-        )
-        """;
-
-        int filasActualizadas =
-                jdbcTemplate.update(
-                        sql,
-
-                        documentoPublicado
-                                .getIdDocumentoPublicado(),
-
-                        documentoPublicado
-                                .getNombreArchivo(),
-
-                        documentoPublicado
-                                .getRutaArchivo(),
-
-                        documentoPublicado
-                                .getHashSha256DocumentoPublicado(),
-
-                        convertirTimestamp(
-                                documentoPublicado
-                                        .getFechaHoraPublicacion()
-                        ),
-
-                        documentoPublicado
-                                .getRegistroInternoProceso(),
-
-                        normalizarTipoDocumento(
-                                documentoPublicado
-                                        .getTipoDocumento()
-                        )
-                );
-
-        validarActualizacionDocumental(
-                filasActualizadas,
-                "registrar el resultado exitoso del SFTP"
-        );
-    }
-
-    @Override
-    public Optional<DocumentoPublicado>
-    buscarResultadoSftpPendiente(
-            String registroInternoProceso,
-            String tipoDocumento
-    ) {
-
-        String sql = """
-        SELECT
-            D.ID_DOCUMENTO_PUBLICADO,
-            D.NOMBRE_ARCHIVO_FINAL,
-            D.RUTA_ARCHIVO,
-            D.HASH_DOCUMENT_FINAL,
-            D.FECHA_PUBLICACION,
-
-            D.TIPO_DOCUMENTO_LOGICO,
-
-            T.REGISTRO_INTERNO_PROCESO,
-            T.NUM_DOCUMENT_TITULAR
-
-        FROM DOCUMENTOS_SUSTENTO D
-
-        INNER JOIN TEMP_SECOMASVIDA T
-            ON T.ID_SECOMASVIDA =
-               D.ID_SECOMASVIDA
-
-        INNER JOIN ESTADO_SUSTENTO E
-            ON E.ID_ESTADO_SUSTENTO =
-               D.ID_ESTADO_SUSTENTO
-
-        WHERE
-            T.REGISTRO_INTERNO_PROCESO = ?
-
-            AND D.TIPO_DOCUMENTO_LOGICO = ?
-
-            AND E.COD_ESTADO_DOCUMENTO
-                <> 'PUBLICADO'
-
-            AND D.ID_DOCUMENTO_PUBLICADO
-                IS NOT NULL
-
-            AND D.NOMBRE_ARCHIVO_FINAL
-                IS NOT NULL
-
-            AND D.RUTA_ARCHIVO
-                IS NOT NULL
-
-            AND D.HASH_DOCUMENT_FINAL
-                IS NOT NULL
-
-            AND D.FECHA_PUBLICACION
-                IS NOT NULL
-        """;
-
-        try {
-
-            DocumentoPublicado documento =
-                    jdbcTemplate.queryForObject(
-                            sql,
-                            (rs, rowNum) -> {
-
-                                DocumentoPublicado resultado =
-                                        new DocumentoPublicado();
-
-                                resultado.setIdDocumentoPublicado(
-                                        rs.getString(
-                                                "ID_DOCUMENTO_PUBLICADO"
-                                        )
-                                );
-
-                                resultado.setRegistroInternoProceso(
-                                        rs.getString(
-                                                "REGISTRO_INTERNO_PROCESO"
-                                        )
-                                );
-
-                                resultado.setTipoDocumento(
-                                        rs.getString(
-                                                "TIPO_DOCUMENTO_LOGICO"
-                                        )
-                                );
-
-                                resultado.setNumeroDocumentoTrabajador(
-                                        rs.getString(
-                                                "NUM_DOCUMENT_TITULAR"
-                                        )
-                                );
-
-                                resultado.setNombreArchivo(
-                                        rs.getString(
-                                                "NOMBRE_ARCHIVO_FINAL"
-                                        )
-                                );
-
-                                resultado.setRutaArchivo(
-                                        rs.getString(
-                                                "RUTA_ARCHIVO"
-                                        )
-                                );
-
-                                resultado
-                                        .setHashSha256DocumentoPublicado(
-                                                rs.getString(
-                                                        "HASH_DOCUMENT_FINAL"
-                                                )
-                                        );
-
-                                Timestamp fecha =
-                                        rs.getTimestamp(
-                                                "FECHA_PUBLICACION"
-                                        );
-
-                                if (fecha != null) {
-                                    resultado
-                                            .setFechaHoraPublicacion(
-                                                    fecha.toLocalDateTime()
-                                            );
-                                }
-
-                                return resultado;
-                            },
-
-                            registroInternoProceso.trim(),
-
-                            normalizarTipoDocumento(
-                                    tipoDocumento
-                            )
-                    );
-
-            return Optional.ofNullable(
-                    documento
-            );
-
-        } catch (
-                EmptyResultDataAccessException e
-        ) {
-            return Optional.empty();
-        }
     }
 
     @Override
@@ -509,7 +300,7 @@ public class JdbcDocumentoSustentoRepository
 
         validarActualizacionDocumental(
                 filasActualizadas,
-                "registrar la publicación documental"
+                "registrar la publicaciÃ³n documental"
         );
     }
 
@@ -646,7 +437,7 @@ public class JdbcDocumentoSustentoRepository
         }
 
         throw new IllegalArgumentException(
-                "No se encontró un Formulario 6012 publicado para registrar su respaldo textual."
+                "No se encontrÃ³ un Formulario 6012 publicado para registrar su respaldo textual."
         );
     }
 
@@ -684,7 +475,7 @@ public class JdbcDocumentoSustentoRepository
         } catch (EmptyResultDataAccessException e) {
 
             throw new IllegalArgumentException(
-                    "No se encontró un respaldo textual del Formulario 6012 para el trámite indicado."
+                    "No se encontrÃ³ un respaldo textual del Formulario 6012 para el trÃ¡mite indicado."
             );
         }
     }
@@ -751,8 +542,8 @@ public class JdbcDocumentoSustentoRepository
 
     SET
         /*
-         * Metadata utilizada únicamente durante
-         * generación y validación.
+         * Metadata utilizada Ãºnicamente durante
+         * generaciÃ³n y validaciÃ³n.
          */
         D.ID_DOCUMENTO_GENERADO = NULL,
         D.NOMBRE_ARCHIVO_GENERADO = NULL,
@@ -809,7 +600,7 @@ public class JdbcDocumentoSustentoRepository
 
         if (filasActualizadas == 0) {
             throw new IllegalStateException(
-                    "No existen documentos finales publicados para ejecutar la depuración documental."
+                    "No existen documentos finales publicados para ejecutar la depuraciÃ³n documental."
             );
         }
     }
@@ -820,7 +611,7 @@ public class JdbcDocumentoSustentoRepository
     ) {
         if (filasActualizadas == 0) {
             throw new IllegalArgumentException(
-                    "No se encontró metadata documental persistida para "
+                    "No se encontrÃ³ metadata documental persistida para "
                             + operacion
                             + "."
             );
@@ -835,7 +626,7 @@ public class JdbcDocumentoSustentoRepository
                         || tipoDocumento.trim().isEmpty()
         ) {
             throw new IllegalArgumentException(
-                    "El tipo de documento lógico es obligatorio."
+                    "El tipo de documento lÃ³gico es obligatorio."
             );
         }
 

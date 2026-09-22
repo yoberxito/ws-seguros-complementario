@@ -7,6 +7,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface GoogleDriveService {
 
@@ -18,6 +19,22 @@ public interface GoogleDriveService {
             String nombreOriginal
     ) throws IOException;
 
+
+    /*
+     * Subida canonica de un documento ya PUBLICADO.
+     *
+     * Usa el ID y la fecha real de publicacion para que
+     * los reintentos sean idempotentes y no cambien de periodo.
+     */
+    CargaArchivoRes guardarArchivoPublicado(
+            MultipartFile archivo,
+            String idTpDoc,
+            String tpDocument,
+            String numDocument,
+            String nombreOriginal,
+            String idDocumentoPublicado,
+            LocalDate fechaPublicacion
+    ) throws IOException;
     byte[] descargarArchivo(
             String fileId
     ) throws IOException;
@@ -31,6 +48,16 @@ public interface GoogleDriveService {
      * OPERACIONES REQUERIDAS POR EL JOB QUINCENAL +VIDA
      * ==========================================================
      */
+
+    /*
+     * Busqueda no destructiva del periodo de preparacion.
+     * Nunca crea Preparacion_* ni la carpeta del periodo.
+     */
+    Optional<File> buscarCarpetaPeriodo(
+            String idTpDoc,
+            LocalDate fechaInicio,
+            LocalDate fechaFin
+    ) throws IOException;
 
     File obtenerCarpetaPeriodo(
             String idTpDoc,
@@ -68,10 +95,10 @@ public interface GoogleDriveService {
     ) throws IOException;
 
     /*
-     * Operación genérica.
+     * OperaciÃ³n genÃ©rica.
      *
-     * La decisión de qué carpeta corresponde a MAPFRE
-     * o PERSONAL queda fuera de este método.
+     * La decisiÃ³n de quÃ© carpeta corresponde a MAPFRE
+     * o PERSONAL queda fuera de este mÃ©todo.
      */
     File moverArchivo(
             String fileId,

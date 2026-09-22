@@ -8,14 +8,13 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-
 class MapfreReporteDiferidoA4Test {
 
     @Test
-    void reporteMapfreNoCierraCarpetaAntesDelAcuse()
+    void reporteMapfreNoCierraCarpetaYLaDerivacionOcurreSoloPostAcuse()
             throws Exception {
 
-        Path sourcePath =
+        Path reportePath =
                 Path.of(
                         "src",
                         "main",
@@ -29,93 +28,129 @@ class MapfreReporteDiferidoA4Test {
                         "ReporteQuincenalLoteVidaService.java"
                 );
 
+        Path entregaPath =
+                Path.of(
+                        "src",
+                        "main",
+                        "java",
+                        "essalud",
+                        "gob",
+                        "pe",
+                        "seguroshijomenormayor",
+                        "entrega",
+                        "service",
+                        "EntregaLoteService.java"
+                );
 
         assertTrue(
-                Files.exists(
-                        sourcePath
-                )
+                Files.exists(reportePath),
+                "Debe existir ReporteQuincenalLoteVidaService."
         );
 
+        assertTrue(
+                Files.exists(entregaPath),
+                "Debe existir EntregaLoteService."
+        );
 
-        String source =
+        String reporteSource =
                 Files.readString(
-                        sourcePath,
+                        reportePath,
                         StandardCharsets.UTF_8
                 );
 
-
-        int inicioBloque =
-                source.indexOf(
-                        "String idCarpetaEntrega;"
+        String entregaSource =
+                Files.readString(
+                        entregaPath,
+                        StandardCharsets.UTF_8
                 );
 
-
-        assertTrue(
-                inicioBloque >= 0
+        /*
+         * La generacion del reporte MAPFRE solo prepara
+         * el periodo y el Excel.
+         *
+         * No puede derivar/mover la carpeta a historico.
+         */
+        assertFalse(
+                reporteSource.contains(
+                        ".cerrarCarpetaPeriodo("
+                ),
+                "El reporte MAPFRE no debe cerrar ni mover la carpeta del periodo."
         );
 
-
-        int ramaMapfre =
-                source.indexOf(
-                        "if (DESTINO_MAPFRE.equals(destino))",
-                        inicioBloque
+        /*
+         * El cierre Drive pertenece al flujo posterior
+         * a la descarga y confirmacion del receptor.
+         */
+        int inicioPostAcuse =
+                entregaSource.indexOf(
+                        "private void asegurarPublicacionDrivePostAcuse("
                 );
-
 
         assertTrue(
-                ramaMapfre > inicioBloque
+                inicioPostAcuse >= 0,
+                "Debe existir el flujo post-acuse de publicacion Drive."
         );
 
-
-        int ramaElse =
-                source.indexOf(
-                        "} else {",
-                        ramaMapfre
+        int validacionAcuse =
+                entregaSource.indexOf(
+                        "No se puede publicar Drive antes del acuse.",
+                        inicioPostAcuse
                 );
-
 
         assertTrue(
-                ramaElse > ramaMapfre
+                validacionAcuse > inicioPostAcuse,
+                "El flujo debe impedir publicar/mover Drive antes del acuse."
         );
 
-
-        String bloqueMapfre =
-                source.substring(
-                        ramaMapfre,
-                        ramaElse
+        int cierreMapfre =
+                entregaSource.indexOf(
+                        ".cerrarCarpetaPeriodo(",
+                        inicioPostAcuse
                 );
 
+        assertTrue(
+                cierreMapfre > validacionAcuse,
+                "MAPFRE debe cerrar la carpeta solamente dentro del flujo post-acuse."
+        );
+
+        int publicacionCompletada =
+                entregaSource.indexOf(
+                        ".registrarPublicacionDriveCompletada(",
+                        cierreMapfre
+                );
+
+        assertTrue(
+                publicacionCompletada > cierreMapfre,
+                "La publicacion Drive completada debe registrarse despues del movimiento."
+        );
+
+        /*
+         * Sin descarga completada tampoco debe poder
+         * completarse normalmente el flujo MAPFRE actual.
+         */
+        assertTrue(
+                entregaSource.contains(
+                        ".existeDescargaLoteCompletada("
+                ),
+                "La entrega debe validar la descarga completada."
+        );
+
+        /*
+         * Regresion: el servicio generico antiguo
+         * MAPFRE/PERSONAL ya no debe volver.
+         */
+        assertFalse(
+                reporteSource.contains(
+                        "if (DESTINO_MAPFRE.equals(destino))"
+                ),
+                "ReporteQuincenalLoteVidaService no debe recuperar la bifurcacion legacy por destinatario."
+        );
 
         assertFalse(
-                bloqueMapfre.contains(
-                        "cerrarCarpetaPeriodo"
-                )
-        );
-
-
-        assertTrue(
-                bloqueMapfre.contains(
-                        "obtenerInformacionArchivo"
-                )
-        );
-
-
-        int cierre =
-                source.indexOf(
-                        ".cerrarCarpetaPeriodo(",
-                        ramaElse
-                );
-
-
-        assertTrue(
-                cierre > ramaElse
-        );
-
-
-        assertTrue(
-                source.contains(
-                        "La derivacion final de MAPFRE ocurre despues del acuse."
-                )
+                reporteSource.contains(
+                        "String idCarpetaEntrega;"
+                ),
+                "No debe existir la estructura legacy de carpeta de entrega."
         );
     }
 }

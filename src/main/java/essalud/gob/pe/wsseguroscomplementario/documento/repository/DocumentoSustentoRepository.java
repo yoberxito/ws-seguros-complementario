@@ -2,7 +2,6 @@ package essalud.gob.pe.wsseguroscomplementario.documento.repository;
 
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoCargado;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoPublicado;
-import java.util.Optional;
 import java.time.LocalDateTime;
 
 public interface DocumentoSustentoRepository {
@@ -27,15 +26,6 @@ public interface DocumentoSustentoRepository {
 
     void registrarPublicacion(
             DocumentoPublicado documentoPublicado
-    );
-
-    void registrarResultadoSftp(
-            DocumentoPublicado documentoPublicado
-    );
-
-    Optional<DocumentoPublicado> buscarResultadoSftpPendiente(
-            String registroInternoProceso,
-            String tipoDocumento
     );
 
     boolean estaPublicado(

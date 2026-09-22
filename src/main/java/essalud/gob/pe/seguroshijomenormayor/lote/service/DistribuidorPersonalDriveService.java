@@ -22,7 +22,7 @@ import java.util.Map;
  * Estructura:
  *
  * root configurado
- *   -> Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud
+ *   -> PERSONAL_PENDING / Red / periodo
  *      -> codigoDestino - nombreDestino
  *         -> fechaInicio_fechaFin
  *            -> copias de PDFs 247

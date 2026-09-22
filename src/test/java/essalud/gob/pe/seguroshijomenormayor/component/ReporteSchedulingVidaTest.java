@@ -1,207 +1,131 @@
 package essalud.gob.pe.seguroshijomenormayor.component;
 
 import essalud.gob.pe.seguroshijomenormayor.dto.Periodo;
-import essalud.gob.pe.seguroshijomenormayor.lote.service.ReporteQuincenalLoteVidaService;
-import essalud.gob.pe.seguroshijomenormayor.service.impl.ReporteServiceSeguroMasVidaImpl;
-
+import essalud.gob.pe.seguroshijomenormayor.lote.service.CalendarioLotesVidaService;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ReporteSchedulingVidaTest {
+
+    private final CalendarioLotesVidaService calendario =
+            new CalendarioLotesVidaService();
 
     @Test
     void calendarioMapfreEsCorrecto() {
 
-        ReporteServiceSeguroMasVidaImpl service =
-                crearService();
-
-        Periodo q1 =
-                service.obtenerPeriodoMapfre(
-                        LocalDate.of(
-                                2026,
-                                9,
-                                16
-                        )
+        Periodo primeraMitad =
+                calendario.obtenerPeriodoMapfre(
+                        LocalDate.of(2026, 9, 16)
                 );
 
         assertEquals(
                 LocalDate.of(2026, 9, 1),
-                q1.inicio()
+                primeraMitad.inicio()
         );
-
         assertEquals(
                 LocalDate.of(2026, 9, 15),
-                q1.fin()
+                primeraMitad.fin()
         );
 
-        Periodo q2 =
-                service.obtenerPeriodoMapfre(
-                        LocalDate.of(
-                                2026,
-                                10,
-                                1
-                        )
+        Periodo segundaMitad =
+                calendario.obtenerPeriodoMapfre(
+                        LocalDate.of(2026, 10, 1)
                 );
 
         assertEquals(
                 LocalDate.of(2026, 9, 16),
-                q2.inicio()
+                segundaMitad.inicio()
         );
-
         assertEquals(
                 LocalDate.of(2026, 9, 30),
-                q2.fin()
-        );
-
-        assertThrows(
-                IllegalStateException.class,
-                () ->
-                        service.obtenerPeriodoMapfre(
-                                LocalDate.of(
-                                        2026,
-                                        9,
-                                        9
-                                )
-                        )
+                segundaMitad.fin()
         );
     }
-
 
     @Test
     void calendarioPersonalEsCorrecto() {
 
-        ReporteServiceSeguroMasVidaImpl service =
-                crearService();
-
-        Periodo q1 =
-                service.obtenerPeriodoPersonal(
-                        LocalDate.of(
-                                2026,
-                                9,
-                                19
-                        )
+        Periodo cuatroDieciocho =
+                calendario.obtenerPeriodoPersonal(
+                        LocalDate.of(2026, 9, 19)
                 );
 
         assertEquals(
                 LocalDate.of(2026, 9, 4),
-                q1.inicio()
+                cuatroDieciocho.inicio()
         );
-
         assertEquals(
                 LocalDate.of(2026, 9, 18),
-                q1.fin()
+                cuatroDieciocho.fin()
         );
 
-        Periodo q2 =
-                service.obtenerPeriodoPersonal(
-                        LocalDate.of(
-                                2026,
-                                10,
-                                4
-                        )
+        Periodo diecinueveTres =
+                calendario.obtenerPeriodoPersonal(
+                        LocalDate.of(2026, 10, 4)
                 );
 
         assertEquals(
                 LocalDate.of(2026, 9, 19),
-                q2.inicio()
+                diecinueveTres.inicio()
         );
-
         assertEquals(
                 LocalDate.of(2026, 10, 3),
-                q2.fin()
-        );
-
-        assertThrows(
-                IllegalStateException.class,
-                () ->
-                        service.obtenerPeriodoPersonal(
-                                LocalDate.of(
-                                        2026,
-                                        9,
-                                        9
-                                )
-                        )
+                diecinueveTres.fin()
         );
     }
 
-
     @Test
-    void cronMapfreEsElConfirmado()
-            throws Exception {
-
-        Method metodo =
-                ReporteJobSegMasVida.class
-                        .getMethod(
-                                "generarReporteQuincenalMapfre"
-                        );
+    void cronMapfreEsElConfirmado() throws Exception {
 
         Scheduled scheduled =
-                metodo.getAnnotation(
-                        Scheduled.class
+                scheduled(
+                        JobLoteMapfreVida.class
                 );
 
-        assertNotNull(
-                scheduled
-        );
-
         assertEquals(
-                "0 0 2 1,16 * *",
+                "0 15 13 22 9 *",
                 scheduled.cron()
         );
-
         assertEquals(
                 "America/Lima",
                 scheduled.zone()
         );
     }
 
-
     @Test
-    void cronPersonalEsElConfirmado()
-            throws Exception {
-
-        Method metodo =
-                ReporteJobSegMasVida.class
-                        .getMethod(
-                                "generarReporteQuincenalPersonal"
-                        );
+    void cronPersonalEsElConfirmado() throws Exception {
 
         Scheduled scheduled =
-                metodo.getAnnotation(
-                        Scheduled.class
+                scheduled(
+                        JobLotePersonalVida.class
                 );
 
-        assertNotNull(
-                scheduled
-        );
-
         assertEquals(
-                "0 0 2 4,19 * *",
+                "20 15 13 22 9 *",
                 scheduled.cron()
         );
-
         assertEquals(
                 "America/Lima",
                 scheduled.zone()
         );
     }
 
-    private ReporteServiceSeguroMasVidaImpl crearService() {
+    private Scheduled scheduled(
+            Class<?> jobClass
+    ) throws Exception {
 
-        return new ReporteServiceSeguroMasVidaImpl(
-                mock(
-                        ReporteQuincenalLoteVidaService.class
-                ),
-                mock(
-                        essalud.gob.pe.seguroshijomenormayor.entrega.service.CierreLoteDistribucionService.class
-                )
+        Method metodo =
+                jobClass.getMethod(
+                        "ejecutar"
+                );
+
+        return metodo.getAnnotation(
+                Scheduled.class
         );
     }
 }

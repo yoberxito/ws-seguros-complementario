@@ -1,5 +1,6 @@
 package essalud.gob.pe.wsseguroscomplementario.documento.service;
 import org.springframework.transaction.annotation.Transactional;
+import essalud.gob.pe.seguroshijomenormayor.service.GoogleDriveService;
 import essalud.gob.pe.wsseguroscomplementario.common.util.ByteArrayMultipartFile;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoRequest;
 import essalud.gob.pe.wsseguroscomplementario.documento.dto.PublicarDocumentoResponse;
@@ -9,9 +10,9 @@ import essalud.gob.pe.wsseguroscomplementario.documento.model.DocumentoSellado;
 import essalud.gob.pe.wsseguroscomplementario.documento.model.TipoDocumentoDigital;
 import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoPublicadoRepository;
 import org.springframework.stereotype.Service;
-import essalud.gob.pe.wsseguroscomplementario.documento.dto.SftpUploadResponse;
 import essalud.gob.pe.wsseguroscomplementario.documento.repository.DocumentoSustentoRepository;
 import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import essalud.gob.pe.seguroshijomenormayor.dto.response.CargaArchivoRes;
 
 @Service
 public class PublicacionDocumentoService {
@@ -31,18 +33,15 @@ public class PublicacionDocumentoService {
 
     private final DocumentoPublicadoRepository documentoPublicadoRepository;
     private final ValidacionSelloEssaludService validacionSelloEssaludService;
-    private final SftpUploadService sftpUploadService;
     private final DocumentoSustentoRepository documentoSustentoRepository;
-    private final PersistenciaResultadoSftpService
-            persistenciaResultadoSftpService;
+    private final GoogleDriveService googleDriveService;
+
 
     public PublicacionDocumentoService(
             DocumentoPublicadoRepository documentoPublicadoRepository,
             ValidacionSelloEssaludService validacionSelloEssaludService,
-            SftpUploadService sftpUploadService,
             DocumentoSustentoRepository documentoSustentoRepository,
-            PersistenciaResultadoSftpService
-                    persistenciaResultadoSftpService
+            GoogleDriveService googleDriveService
     ) {
         this.documentoPublicadoRepository =
                 documentoPublicadoRepository;
@@ -50,13 +49,11 @@ public class PublicacionDocumentoService {
         this.validacionSelloEssaludService =
                 validacionSelloEssaludService;
 
-        this.sftpUploadService =
-                sftpUploadService;
-
         this.documentoSustentoRepository =
                 documentoSustentoRepository;
-        this.persistenciaResultadoSftpService =
-                persistenciaResultadoSftpService;
+
+        this.googleDriveService =
+                googleDriveService;
     }
 
     @Transactional
@@ -101,151 +98,232 @@ public class PublicacionDocumentoService {
             );
         }
 
-        java.util.Optional<DocumentoPublicado>
-                resultadoSftpPendiente =
-                documentoSustentoRepository
-                        .buscarResultadoSftpPendiente(
-                                request
-                                        .getRegistroInternoProceso(),
+        if (
+                documentoSustentoRepository.estaPublicado(
+                        request.getRegistroInternoProceso(),
+                        request.getTipoDocumento()
+                )
+        ) {
 
-                                request
-                                        .getTipoDocumento()
-                        );
-
-        if (resultadoSftpPendiente.isPresent()) {
-
-            DocumentoPublicado metadataPendiente =
-                    resultadoSftpPendiente.get();
-
-            DocumentoPublicado documentoPersistido =
+            DocumentoPublicado existente =
                     documentoPublicadoRepository
-                            .buscarPorId(
-                                    metadataPendiente
-                                            .getIdDocumentoPublicado()
+                            .buscarPorProcesoYTrabajador(
+                                    request.getRegistroInternoProceso(),
+                                    request.getNumeroDocumentoTrabajador()
                             )
+                            .stream()
+                            .filter(
+                                    documento ->
+                                            documento != null
+                                                    && documento.getTipoDocumento() != null
+                                                    && normalizar(
+                                                            documento.getTipoDocumento()
+                                                    ).equals(
+                                                            normalizar(
+                                                                    request.getTipoDocumento()
+                                                            )
+                                                    )
+                            )
+                            .findFirst()
                             .orElseThrow(
                                     () -> new IllegalStateException(
-                                            "Existe evidencia de una subida SFTP previa, "
-                                                    + "pero no pudo recuperarse el documento final persistido."
+                                            "Oracle indica que el documento ya esta PUBLICADO, pero no fue posible recuperar su registro documental."
                                     )
                             );
 
-            /*
-             * La ruta SFTP durable vive actualmente
-             * en DOCUMENTOS_SUSTENTO.
-             */
-            documentoPersistido.setRutaArchivo(
-                    metadataPendiente
-                            .getRutaArchivo()
-            );
-
-            /*
-             * No se vuelve a llamar al SFTP.
-             * Solo se completa el estado PUBLICADO
-             * pendiente en Oracle.
-             */
-            documentoSustentoRepository
-                    .registrarPublicacion(
-                            documentoPersistido
-                    );
-
             return convertirDocumentoPublicadoAResponse(
-                    documentoPersistido,
+                    existente,
                     true,
-                    "Se recuperó una publicación SFTP previa y se completó el registro documental sin reenviar el archivo.",
+                    "El documento ya se encontraba publicado.",
                     false
             );
         }
 
-        SftpUploadResponse resultadoSftp;
+        String idTpDoc =
+                resolverIdTpDocDrive(
+                        request.getTipoDocumento()
+                );
 
+        if (idTpDoc == null) {
+            return construirRespuestaNoPublicada(
+                    request,
+                    documentoSellado,
+                    ESTADO_ERROR_PUBLICACION,
+                    "El tipo documental no cuenta con repositorio Drive configurado.",
+                    true,
+                    true,
+                    List.of(
+                            "No fue posible resolver idTpDoc para la publicacion oficial en Drive."
+                    )
+            );
+        }
+
+        String idDocumentoPublicado =
+                generarIdDocumentoPublicado(
+                        request
+                );
+
+        LocalDateTime fechaHoraPublicacion =
+                LocalDateTime.now(
+                        ZONA_HORARIA_LIMA
+                );
+
+        DocumentoPublicado documentoPublicado =
+                new DocumentoPublicado();
+
+        documentoPublicado.setIdDocumentoPublicado(
+                idDocumentoPublicado
+        );
+        documentoPublicado.setIdDocumentoSellado(
+                documentoSellado.getIdDocumentoSellado()
+        );
+        documentoPublicado.setRegistroInternoProceso(
+                documentoSellado.getRegistroInternoProceso()
+        );
+        documentoPublicado.setTipoDocumento(
+                documentoSellado.getTipoDocumento()
+        );
+        documentoPublicado.setNumeroDocumentoTrabajador(
+                documentoSellado.getNumeroDocumentoTrabajador()
+        );
+        documentoPublicado.setNombreArchivo(
+                documentoSellado.getNombreArchivo()
+        );
+        documentoPublicado.setContentType(
+                documentoSellado.getContentType()
+        );
+        documentoPublicado.setContenidoArchivo(
+                documentoSellado.getContenidoArchivo()
+        );
+        documentoPublicado.setHashSha256DocumentoPublicado(
+                calcularSha256(
+                        documentoSellado.getContenidoArchivo()
+                )
+        );
+        documentoPublicado.setFechaHoraPublicacion(
+                fechaHoraPublicacion
+        );
+        documentoPublicado.setCanalPublicacion(
+                valorPorDefecto(
+                        request.getCanalPublicacion(),
+                        "SOMOS_ESSALUD"
+                )
+        );
+        documentoPublicado.setPublicadoPor(
+                valorPorDefecto(
+                        request.getPublicadoPor(),
+                        "SISTEMA"
+                )
+        );
+        documentoPublicado.setEstadoPublicacionDocumental(
+                ESTADO_DOCUMENTO_PUBLICADO
+        );
+        documentoPublicado.setDisponibleParaUsuario(
+                true
+        );
+
+        /*
+         * Drive es el repositorio documental oficial.
+         *
+         * Regla de consistencia:
+         * primero Drive confirma la persistencia fisica;
+         * solo despues Oracle puede registrar PUBLICADO.
+         *
+         * Si Oracle falla despues de Drive, el reintento es
+         * idempotente porque guardarArchivoPublicado reutiliza
+         * el archivo por identidad/nombre deterministico.
+         */
         try {
-            resultadoSftp =
-                    sftpUploadService.subirDocumentoSellado(
-                            documentoSellado.getContenidoArchivo(),
+
+            ByteArrayMultipartFile archivoDrive =
+                    new ByteArrayMultipartFile(
+                            "archivo",
                             documentoSellado.getNombreArchivo(),
-                            request.getTipoDocumentoTrabajador(),
-                            request.getNumeroDocumentoTrabajador()
+                            documentoSellado.getContentType(),
+                            documentoSellado.getContenidoArchivo()
                     );
 
-        } catch (Exception e) {
-            List<String> observacionesSftp =
-                    new ArrayList<>();
+            CargaArchivoRes resultadoDrive =
+                    googleDriveService
+                            .guardarArchivoPublicado(
+                                    archivoDrive,
+                                    idTpDoc,
+                                    request.getTipoDocumentoTrabajador(),
+                                    request.getNumeroDocumentoTrabajador(),
+                                    documentoSellado.getNombreArchivo(),
+                                    idDocumentoPublicado,
+                                    fechaHoraPublicacion.toLocalDate()
+                            );
 
-            String detalleError =
-                    campoVacio(e.getMessage())
-                            ? "Error no especificado por el servicio SFTP."
-                            : e.getMessage();
+            if (
+                    resultadoDrive == null
+                            || resultadoDrive.getArchivo() == null
+                            || campoVacio(
+                                    resultadoDrive
+                                            .getArchivo()
+                                            .nombreArchivo()
+                            )
+                            || campoVacio(
+                                    resultadoDrive
+                                            .getArchivo()
+                                            .rutaArchivo()
+                            )
+            ) {
+                throw new IllegalStateException(
+                        "Google Drive no confirmo la persistencia del documento oficial."
+                );
+            }
 
-            observacionesSftp.add(
-                    "No se pudo almacenar el documento sellado en el SFTP: "
-                            + detalleError
+            documentoPublicado.setNombreArchivo(
+                    resultadoDrive
+                            .getArchivo()
+                            .nombreArchivo()
             );
+
+            documentoPublicado.setRutaArchivo(
+                    resultadoDrive
+                            .getArchivo()
+                            .rutaArchivo()
+            );
+
+        } catch (Exception e) {
+
+            String detalle =
+                    campoVacio(
+                            e.getMessage()
+                    )
+                            ? "Error no especificado por Google Drive."
+                            : e.getMessage();
 
             return construirRespuestaNoPublicada(
                     request,
                     documentoSellado,
                     ESTADO_ERROR_PUBLICACION,
-                    "El documento fue sellado correctamente, pero no pudo ser almacenado en el SFTP.",
+                    "El documento fue sellado correctamente, pero no pudo ser almacenado en el repositorio oficial de Google Drive.",
                     true,
                     true,
-                    observacionesSftp
+                    List.of(
+                            "No se pudo almacenar el documento en Google Drive: "
+                                    + detalle
+                    )
             );
         }
 
-        String idDocumentoPublicado = generarIdDocumentoPublicado();
-        LocalDateTime fechaHoraPublicacion = LocalDateTime.now(ZONA_HORARIA_LIMA);
-
-        DocumentoPublicado documentoPublicado = new DocumentoPublicado();
-
-        documentoPublicado.setIdDocumentoPublicado(idDocumentoPublicado);
-        documentoPublicado.setIdDocumentoSellado(documentoSellado.getIdDocumentoSellado());
-        documentoPublicado.setRegistroInternoProceso(documentoSellado.getRegistroInternoProceso());
-        documentoPublicado.setTipoDocumento(documentoSellado.getTipoDocumento());
-        documentoPublicado.setNumeroDocumentoTrabajador(documentoSellado.getNumeroDocumentoTrabajador());
-        documentoPublicado.setNombreArchivo(
-                resultadoSftp
-                        .getArchivo()
-                        .getNombreArchivo()
-        );
-
-        documentoPublicado.setRutaArchivo(
-                resultadoSftp
-                        .getArchivo()
-                        .getRutaArchivo()
-        );
-        documentoPublicado.setContentType(documentoSellado.getContentType());
-        documentoPublicado.setContenidoArchivo(documentoSellado.getContenidoArchivo());
-        documentoPublicado.setHashSha256DocumentoPublicado(
-                calcularSha256(documentoSellado.getContenidoArchivo())
-        );
-        documentoPublicado.setFechaHoraPublicacion(fechaHoraPublicacion);
-        documentoPublicado.setCanalPublicacion(valorPorDefecto(request.getCanalPublicacion(), "SOMOS_ESSALUD"));
-        documentoPublicado.setPublicadoPor(valorPorDefecto(request.getPublicadoPor(), "SISTEMA"));
-        documentoPublicado.setEstadoPublicacionDocumental(ESTADO_DOCUMENTO_PUBLICADO);
-        documentoPublicado.setDisponibleParaUsuario(true);
-
-        /*
-         * Primero se conserva durablemente el resultado
-         * exitoso del SFTP en una transacción independiente.
-         *
-         * Si algo falla después de este punto, el reintento
-         * podrá recuperar esta evidencia y no volverá a
-         * enviar el archivo al SFTP.
-         */
         DocumentoPublicado documentoGuardado =
-                persistenciaResultadoSftpService
-                        .registrarResultadoSftp(
+                documentoPublicadoRepository
+                        .guardar(
                                 documentoPublicado
                         );
 
         /*
-         * Solo después se confirma el estado funcional
-         * PUBLICADO.
-         *
-         * Esta operación pertenece a la transacción
-         * exterior actual.
+         * El repositorio simulado no persiste RUTA_ARCHIVO.
+         * La URL oficial Drive se conserva para actualizar
+         * DOCUMENTOS_SUSTENTO y construir la respuesta.
          */
+        documentoGuardado.setRutaArchivo(
+                documentoPublicado.getRutaArchivo()
+        );
+
         documentoSustentoRepository
                 .registrarPublicacion(
                         documentoGuardado
@@ -254,14 +332,35 @@ public class PublicacionDocumentoService {
         return convertirDocumentoPublicadoAResponse(
                 documentoGuardado,
                 true,
-                "Documento sellado enviado al SFTP y publicado correctamente.",
+                "Documento almacenado en Google Drive y publicado correctamente.",
                 false
         );
     }
 
+
+    private String resolverIdTpDocDrive(
+            String tipoDocumento
+    ) {
+
+        String tipo =
+                normalizar(
+                        tipoDocumento
+                );
+
+        if ("FORMULARIO_6012".equals(tipo)) {
+            return "244";
+        }
+
+        if ("AUTORIZACION_DESCUENTO".equals(tipo)) {
+            return "247";
+        }
+
+        return null;
+    }
+
     public DocumentoPublicado obtenerDocumentoPublicado(String idDocumentoPublicado) {
         return documentoPublicadoRepository.buscarPorId(idDocumentoPublicado)
-                .orElseThrow(() -> new IllegalArgumentException("No se encontró el documento publicado solicitado."));
+                .orElseThrow(() -> new IllegalArgumentException("No se encontrÃ³ el documento publicado solicitado."));
     }
 
     public List<PublicarDocumentoResponse> listarDocumentosPublicadosPorProcesoYTrabajador(
@@ -354,7 +453,7 @@ public class PublicacionDocumentoService {
                         )
         ) {
             observaciones.add(
-                    "El número de documento del trabajador no coincide con el documento sellado."
+                    "El nÃºmero de documento del trabajador no coincide con el documento sellado."
             );
         }
 
@@ -440,7 +539,7 @@ public class PublicacionDocumentoService {
 
     private void validarRequest(PublicarDocumentoRequest request) {
         if (request == null) {
-            throw new IllegalArgumentException("La solicitud de publicación no puede estar vacía.");
+            throw new IllegalArgumentException("La solicitud de publicaciÃ³n no puede estar vacÃ­a.");
         }
 
         if (campoVacio(request.getIdDocumentoSellado())) {
@@ -457,7 +556,7 @@ public class PublicacionDocumentoService {
 
         if (!TipoDocumentoDigital.esValido(request.getTipoDocumento())) {
             throw new IllegalArgumentException(
-                    "El tipo de documento no es válido. Valores permitidos: "
+                    "El tipo de documento no es vÃ¡lido. Valores permitidos: "
                             + TipoDocumentoDigital.valoresPermitidos()
             );
         }
@@ -469,7 +568,7 @@ public class PublicacionDocumentoService {
         }
 
         if (campoVacio(request.getNumeroDocumentoTrabajador())) {
-            throw new IllegalArgumentException("El número de documento del trabajador es obligatorio.");
+            throw new IllegalArgumentException("El nÃºmero de documento del trabajador es obligatorio.");
         }
     }
 
@@ -485,8 +584,25 @@ public class PublicacionDocumentoService {
         }
     }
 
-    private String generarIdDocumentoPublicado() {
-        return "DOC-PUB-" + UUID.randomUUID();
+    private String generarIdDocumentoPublicado(
+            PublicarDocumentoRequest request
+    ) {
+
+        String identidad =
+                normalizar(
+                        request.getRegistroInternoProceso()
+                )
+                        + "|"
+                        + normalizar(
+                                request.getTipoDocumento()
+                        );
+
+        return "DOC-PUB-"
+                + UUID.nameUUIDFromBytes(
+                        identidad.getBytes(
+                                StandardCharsets.UTF_8
+                        )
+                );
     }
 
     private String valorPorDefecto(String valor, String valorDefecto) {

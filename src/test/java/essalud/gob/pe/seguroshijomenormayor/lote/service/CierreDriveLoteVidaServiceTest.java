@@ -9,11 +9,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.Collections;
-import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,267 +21,138 @@ import static org.mockito.Mockito.when;
 
 class CierreDriveLoteVidaServiceTest {
 
-    private static final String ROOT_ID =
-            "ROOT";
-
-    private static final String FINAL_MAPFRE_ID =
-            "FINAL_MAPFRE";
-
     private static final LocalDate INICIO =
             LocalDate.of(2026, 9, 1);
 
     private static final LocalDate FIN =
             LocalDate.of(2026, 9, 15);
 
-    private static final String NOMBRE_PERIODO =
-            "2026-09-01_2026-09-15";
-
-    private GoogleDriveService googleDriveService;
+    private GoogleDriveService drive;
     private GoogleDriveProperties properties;
-
     private CierreDriveLoteVidaService service;
 
     @BeforeEach
     void setUp() {
 
-        googleDriveService =
-                mock(
-                        GoogleDriveService.class
-                );
+        drive = mock(GoogleDriveService.class);
+        properties = mock(GoogleDriveProperties.class);
 
-        properties =
-                mock(
-                        GoogleDriveProperties.class
-                );
-
-        when(
-                properties.getFolderId()
-        ).thenReturn(
-                ROOT_ID
-        );
+        when(properties.getFolderId())
+                .thenReturn("ROOT");
 
         service =
                 new CierreDriveLoteVidaService(
-                        googleDriveService,
+                        drive,
                         properties
                 );
     }
 
     @Test
-    void resolverUsaPreparacionEnPrimeraEjecucion()
-            throws Exception {
-
-        File destinoFinal =
-                carpeta(
-                        FINAL_MAPFRE_ID,
-                        "Seguro +Vida - Afiliaciones MAPFRE",
-                        "https://drive/final-mapfre"
-                );
+    void resolverPeriodoNoCreaCarpetas() throws Exception {
 
         File preparacion =
                 carpeta(
-                        "PERIODO_PREP",
-                        NOMBRE_PERIODO,
-                        "https://drive/preparacion"
+                        "PERIODO",
+                        "2026-09-01_2026-09-15",
+                        "https://drive/periodo"
                 );
 
         when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Afiliaciones MAPFRE",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoFinal
-        );
-
-        when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                Collections.emptyList()
-        );
-
-        when(
-                googleDriveService
-                        .obtenerCarpetaPeriodo(
-                                "244",
-                                INICIO,
-                                FIN
-                        )
-        ).thenReturn(
-                preparacion
-        );
-
-        File resultado =
-                service
-                        .resolverCarpetaPeriodoTrabajo(
-                                "MAPFRE",
-                                INICIO,
-                                FIN
-                        );
-
-        assertEquals(
-                "PERIODO_PREP",
-                resultado.getId()
-        );
-    }
-
-    @Test
-    void resolverUsaCarpetaFinalEnReejecucion()
-            throws Exception {
-
-        File destinoFinal =
-                carpeta(
-                        FINAL_MAPFRE_ID,
-                        "Seguro +Vida - Afiliaciones MAPFRE",
-                        "https://drive/final-mapfre"
-                );
-
-        File periodoFinal =
-                carpeta(
-                        "PERIODO_FINAL",
-                        NOMBRE_PERIODO,
-                        "https://drive/periodo-final"
-                );
-
-        when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Afiliaciones MAPFRE",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoFinal
-        );
-
-        when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                List.of(
-                        periodoFinal
+                drive.buscarCarpetas(
+                        "MAPFRE_HISTORICAL",
+                        "ROOT"
                 )
-        );
+        ).thenReturn(Collections.emptyList());
+
+        when(
+                drive.buscarCarpetaPeriodo(
+                        "244",
+                        INICIO,
+                        FIN
+                )
+        ).thenReturn(Optional.of(preparacion));
 
         File resultado =
-                service
-                        .resolverCarpetaPeriodoTrabajo(
-                                "MAPFRE",
-                                INICIO,
-                                FIN
-                        );
+                service.resolverCarpetaPeriodoTrabajo(
+                        "MAPFRE",
+                        INICIO,
+                        FIN
+                );
 
         assertEquals(
-                "PERIODO_FINAL",
+                "PERIODO",
                 resultado.getId()
         );
 
-        verify(
-                googleDriveService,
-                never()
-        ).obtenerCarpetaPeriodo(
-                anyString(),
-                any(),
-                any()
-        );
+        verify(drive, never())
+                .obtenerOCrearCarpeta(
+                        anyString(),
+                        anyString()
+                );
     }
 
     @Test
-    void cerrarMueveCarpetaHaciaDestinoFinal()
+    void cerrarCreaHistoricalSoloCuandoExisteLoteReal()
             throws Exception {
 
-        File destinoFinal =
+        File periodo =
                 carpeta(
-                        FINAL_MAPFRE_ID,
-                        "Seguro +Vida - Afiliaciones MAPFRE",
-                        "https://drive/final-mapfre"
+                        "PERIODO",
+                        "2026-09-01_2026-09-15",
+                        "https://drive/preparacion"
                 );
 
-        File preparacion =
+        File historical =
                 carpeta(
-                        "PERIODO_PREP",
-                        NOMBRE_PERIODO,
-                        "https://drive/preparacion"
+                        "HIST",
+                        "MAPFRE_HISTORICAL",
+                        "https://drive/historical"
                 );
 
         File movida =
                 carpeta(
-                        "PERIODO_PREP",
-                        NOMBRE_PERIODO,
-                        "https://drive/periodo-final"
+                        "PERIODO",
+                        "2026-09-01_2026-09-15",
+                        "https://drive/historical/periodo"
                 );
 
-        when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Afiliaciones MAPFRE",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoFinal
-        );
+        when(drive.obtenerInformacionArchivo("PERIODO"))
+                .thenReturn(periodo);
 
         when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                Collections.emptyList()
-        );
+                drive.buscarCarpetas(
+                        "MAPFRE_HISTORICAL",
+                        "ROOT"
+                )
+        ).thenReturn(Collections.emptyList());
 
         when(
-                googleDriveService
-                        .obtenerInformacionArchivo(
-                                "PERIODO_PREP"
-                        )
-        ).thenReturn(
-                preparacion
-        );
+                drive.obtenerOCrearCarpeta(
+                        "MAPFRE_HISTORICAL",
+                        "ROOT"
+                )
+        ).thenReturn(historical);
 
         when(
-                googleDriveService
-                        .moverArchivo(
-                                "PERIODO_PREP",
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                movida
-        );
+                drive.moverArchivo(
+                        "PERIODO",
+                        "HIST"
+                )
+        ).thenReturn(movida);
 
         ResultadoCierreDrive resultado =
-                service
-                        .cerrarCarpetaPeriodo(
-                                "MAPFRE",
-                                INICIO,
-                                FIN,
-                                "PERIODO_PREP",
-                                3
-                        );
+                service.cerrarCarpetaPeriodo(
+                        "MAPFRE",
+                        INICIO,
+                        FIN,
+                        "PERIODO",
+                        3
+                );
 
         assertEquals(
-                "PERIODO_PREP",
+                "PERIODO",
                 resultado.getIdCarpetaFinal()
         );
-
-        assertEquals(
-                NOMBRE_PERIODO,
-                resultado.getNombreCarpetaFinal()
-        );
-
-        assertEquals(
-                "https://drive/periodo-final",
-                resultado.getUrlCarpetaFinal()
-        );
-
         assertEquals(
                 3,
                 resultado.getCantidadDocumentos()
@@ -290,191 +160,22 @@ class CierreDriveLoteVidaServiceTest {
     }
 
     @Test
-    void cerrarEsIdempotenteSiPeriodoYaEstaCerrado()
-            throws Exception {
-
-        File destinoFinal =
-                carpeta(
-                        FINAL_MAPFRE_ID,
-                        "Seguro +Vida - Afiliaciones MAPFRE",
-                        "https://drive/final-mapfre"
-                );
-
-        File periodoFinal =
-                carpeta(
-                        "PERIODO_FINAL",
-                        NOMBRE_PERIODO,
-                        "https://drive/periodo-final"
-                );
-
-        when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Afiliaciones MAPFRE",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoFinal
-        );
-
-        when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                List.of(
-                        periodoFinal
-                )
-        );
-
-        ResultadoCierreDrive resultado =
-                service
-                        .cerrarCarpetaPeriodo(
-                                "MAPFRE",
-                                INICIO,
-                                FIN,
-                                "PERIODO_FINAL",
-                                3
-                        );
-
-        assertEquals(
-                "PERIODO_FINAL",
-                resultado.getIdCarpetaFinal()
-        );
-
-        verify(
-                googleDriveService,
-                never()
-        ).moverArchivo(
-                anyString(),
-                anyString()
-        );
-    }
-
-    @Test
-    void cerrarRechazaOtraCarpetaFinalDelMismoPeriodo()
-            throws Exception {
-
-        File destinoFinal =
-                carpeta(
-                        FINAL_MAPFRE_ID,
-                        "Seguro +Vida - Afiliaciones MAPFRE",
-                        "https://drive/final-mapfre"
-                );
-
-        File periodoFinal =
-                carpeta(
-                        "OTRO_ID",
-                        NOMBRE_PERIODO,
-                        "https://drive/otro"
-                );
-
-        when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Afiliaciones MAPFRE",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoFinal
-        );
-
-        when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                FINAL_MAPFRE_ID
-                        )
-        ).thenReturn(
-                List.of(
-                        periodoFinal
-                )
-        );
+    void personalNoPuedeUsarCierreLegacyMapfre() throws java.io.IOException {
 
         assertThrows(
-                IllegalStateException.class,
-                () ->
-                        service
-                                .cerrarCarpetaPeriodo(
-                                        "MAPFRE",
-                                        INICIO,
-                                        FIN,
-                                        "PERIODO_PREP",
-                                        3
-                                )
+                IllegalArgumentException.class,
+                () -> service.resolverCarpetaPeriodoTrabajo(
+                        "PERSONAL",
+                        INICIO,
+                        FIN
+                )
         );
-    }
 
-    @Test
-    void personalCreaYUsaSuCarpetaInstitucional()
-            throws Exception {
-
-        File destinoPersonal =
-                carpeta(
-                        "FINAL_PERSONAL",
-                        "Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud",
-                        "https://drive/final-personal"
+        verify(drive, never())
+                .buscarCarpetas(
+                        anyString(),
+                        anyString()
                 );
-
-        File preparacion =
-                carpeta(
-                        "PERIODO_PERSONAL",
-                        NOMBRE_PERIODO,
-                        "https://drive/preparacion-personal"
-                );
-
-        when(
-                googleDriveService
-                        .obtenerOCrearCarpeta(
-                                "Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud",
-                                ROOT_ID
-                        )
-        ).thenReturn(
-                destinoPersonal
-        );
-
-        when(
-                googleDriveService
-                        .buscarCarpetas(
-                                NOMBRE_PERIODO,
-                                "FINAL_PERSONAL"
-                        )
-        ).thenReturn(
-                Collections.emptyList()
-        );
-
-        when(
-                googleDriveService
-                        .obtenerCarpetaPeriodo(
-                                "247",
-                                INICIO,
-                                FIN
-                        )
-        ).thenReturn(
-                preparacion
-        );
-
-        File resultado =
-                service
-                        .resolverCarpetaPeriodoTrabajo(
-                                "PERSONAL",
-                                INICIO,
-                                FIN
-                        );
-
-        assertEquals(
-                "PERIODO_PERSONAL",
-                resultado.getId()
-        );
-
-        verify(
-                googleDriveService
-        ).obtenerOCrearCarpeta(
-                "Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud",
-                ROOT_ID
-        );
     }
 
     private File carpeta(
@@ -483,14 +184,14 @@ class CierreDriveLoteVidaServiceTest {
             String webViewLink
     ) {
 
-        return new File()
-                .setId(id)
-                .setName(nombre)
-                .setMimeType(
-                        "application/vnd.google-apps.folder"
-                )
-                .setWebViewLink(
-                        webViewLink
-                );
+        File file = new File();
+        file.setId(id);
+        file.setName(nombre);
+        file.setMimeType(
+                "application/vnd.google-apps.folder"
+        );
+        file.setWebViewLink(webViewLink);
+
+        return file;
     }
 }

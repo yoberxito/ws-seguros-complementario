@@ -67,7 +67,7 @@ class EntregaPublicaMapfreDriveOracleRealA47E2ETest {
             "244";
 
     private static final String FINAL_MAPFRE =
-            "Seguro +Vida - Afiliaciones MAPFRE";
+            "MAPFRE_HISTORICAL";
 
     private static final String MIME_FOLDER =
             "application/vnd.google-apps.folder";
@@ -477,12 +477,6 @@ class EntregaPublicaMapfreDriveOracleRealA47E2ETest {
          * NO representa validacion OTP institucional.
          */
 
-        entregaService
-                .registrarOtpValidadoPorToken(
-                        token,
-                        "127.0.0.1",
-                        "A47-MAPFRE-E2E"
-                );
 
 
         /*
@@ -750,11 +744,6 @@ class EntregaPublicaMapfreDriveOracleRealA47E2ETest {
                 );
 
 
-        int otp =
-                eventos.indexOf(
-                        "OTP_VALIDADO"
-                );
-
         int descargaEvento =
                 eventos.indexOf(
                         "DESCARGA_LOTE_COMPLETADA"
@@ -769,14 +758,8 @@ class EntregaPublicaMapfreDriveOracleRealA47E2ETest {
                 eventos.indexOf(
                         "PUBLICACION_DRIVE_COMPLETADA"
                 );
-
-
         assertTrue(
-                otp >= 0
-        );
-
-        assertTrue(
-                descargaEvento > otp
+                descargaEvento >= 0
         );
 
         assertTrue(

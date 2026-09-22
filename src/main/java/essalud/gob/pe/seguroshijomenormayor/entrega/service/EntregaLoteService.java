@@ -58,7 +58,7 @@ public class EntregaLoteService {
 
     private static final String
             TEXTO_ACUSE_V1 =
-            "Confirmo la recepción de la notificación y que el lote +Vida correspondiente al período indicado se encuentra disponible para su consulta.";
+            "Confirmo que el lote +Vida fue descargado y recibido correctamente.";
 
     private static final String
             VERSION_TEXTO_ACUSE_V1 =
@@ -121,10 +121,10 @@ public class EntregaLoteService {
     /*
      * Prepara una sola entrega por lote/destinatario.
      *
-     * En un reintento previo al envío:
+     * En un reintento previo al envÃ­o:
      * - conserva la misma fila;
      * - renueva TOKEN_HASH;
-     * - devuelve un nuevo token público.
+     * - devuelve un nuevo token pÃºblico.
      *
      * De esta forma un rerun no crea otra ENTREGA_LOTE.
      */
@@ -162,7 +162,7 @@ public class EntregaLoteService {
                     existente.get();
 
             /*
-             * Si el flujo ya terminó o el enlace
+             * Si el flujo ya terminÃ³ o el enlace
              * ya fue notificado, no regeneramos token.
              */
             if (
@@ -184,8 +184,8 @@ public class EntregaLoteService {
             }
 
             /*
-             * ENVIANDO representa una operación que ya
-             * comenzó. No la pisamos silenciosamente.
+             * ENVIANDO representa una operaciÃ³n que ya
+             * comenzÃ³. No la pisamos silenciosamente.
              */
             if (
                     ESTADO_NOTIFICACION_ENVIANDO
@@ -196,7 +196,7 @@ public class EntregaLoteService {
             ) {
 
                 throw new EstadoEntregaException(
-                        "La entrega se encuentra actualmente en proceso de notificación."
+                        "La entrega se encuentra actualmente en proceso de notificaciÃ³n."
                 );
             }
 
@@ -220,7 +220,7 @@ public class EntregaLoteService {
 
             if (!actualizada) {
                 throw new IllegalStateException(
-                        "No fue posible actualizar la preparación de la entrega existente."
+                        "No fue posible actualizar la preparaciÃ³n de la entrega existente."
                 );
             }
 
@@ -334,61 +334,6 @@ public class EntregaLoteService {
         );
     }
 
-    public void registrarOtpValidadoPorToken(
-            String token,
-            String ipOrigen,
-            String datosSesionDispositivo
-    ) {
-
-        validarToken(token);
-
-        String tokenHash =
-                calcularTokenHash(token);
-
-        EntregaLote entrega =
-                entregaLoteRepository
-                        .buscarPorTokenHash(
-                                tokenHash
-                        )
-                        .orElseThrow(
-                                () ->
-                                        new IllegalArgumentException(
-                                                "La entrega solicitada no existe."
-                                        )
-                        );
-
-        if (
-                entrega.getFechaPublicacion()
-                        == null
-        ) {
-            throw new EstadoEntregaException(
-                    "El lote todavia no se encuentra publicado."
-            );
-        }
-
-        if (
-                entrega.getFechaAcuse()
-                        != null
-        ) {
-            throw new EstadoEntregaException(
-                    "La recepcion del lote ya se encuentra registrada."
-            );
-        }
-
-        entregaLoteTransicionService
-                .registrarOtpValidado(
-                        tokenHash,
-                        limitarNullable(
-                                ipOrigen,
-                                64
-                        ),
-                        limitarNullable(
-                                datosSesionDispositivo,
-                                1000
-                        )
-                );
-    }
-
     public void registrarDescargaCompletadaPorToken(
             String token,
             String ipOrigen,
@@ -417,7 +362,7 @@ public class EntregaLoteService {
                         == null
         ) {
             throw new EstadoEntregaException(
-                    "El lote todavía no se encuentra publicado."
+                    "El lote todavÃ­a no se encuentra publicado."
             );
         }
 
@@ -426,7 +371,7 @@ public class EntregaLoteService {
                         != null
         ) {
             throw new EstadoEntregaException(
-                    "La recepción del lote ya se encuentra registrada."
+                    "La recepciÃ³n del lote ya se encuentra registrada."
             );
         }
 
@@ -473,7 +418,7 @@ public class EntregaLoteService {
                         == null
         ) {
             throw new EstadoEntregaException(
-                    "El lote todavía no se encuentra publicado."
+                    "El lote todavÃ­a no se encuentra publicado."
             );
         }
 
@@ -506,7 +451,7 @@ public class EntregaLoteService {
                         )
         ) {
             throw new EstadoEntregaException(
-                    "Debe descargar completamente el lote antes de confirmar la recepción."
+                    "Debe descargar completamente el lote antes de confirmar la recepciÃ³n."
             );
         }
 
@@ -536,7 +481,7 @@ public class EntregaLoteService {
                             .orElseThrow(
                                     () ->
                                             new IllegalStateException(
-                                                    "La entrega dejó de estar disponible durante el registro del acuse."
+                                                    "La entrega dejÃ³ de estar disponible durante el registro del acuse."
                                             )
                             );
 
@@ -564,12 +509,12 @@ public class EntregaLoteService {
                             == null
             ) {
                 throw new EstadoEntregaException(
-                        "El lote todavía no se encuentra publicado."
+                        "El lote todavÃ­a no se encuentra publicado."
                 );
             }
 
             throw new IllegalStateException(
-                    "No fue posible registrar el acuse de recepción."
+                    "No fue posible registrar el acuse de recepciÃ³n."
             );
         }
 
@@ -590,7 +535,7 @@ public class EntregaLoteService {
                         == null
         ) {
             throw new IllegalStateException(
-                    "Oracle no confirmó la persistencia del acuse de recepción."
+                    "Oracle no confirmÃ³ la persistencia del acuse de recepciÃ³n."
             );
         }
 

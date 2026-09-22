@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -55,8 +56,8 @@ public class GoogleDriveServiceImpl
      *
      * Se conserva el contrato actual de Yober.
      *
-     * Se añaden appProperties porque el Job necesita
-     * identificar inequívocamente al trabajador sin
+     * Se aÃ±aden appProperties porque el Job necesita
+     * identificar inequÃ­vocamente al trabajador sin
      * interpretar posiciones del nombre del archivo.
      */
     @Override
@@ -82,7 +83,7 @@ public class GoogleDriveServiceImpl
                 );
 
         /*
-         * La carpeta de preparación se determina según
+         * La carpeta de preparaciÃ³n se determina segÃºn
          * el calendario del tipo documental:
          * 244 MAPFRE y 247 PERSONAL.
          */
@@ -208,9 +209,268 @@ public class GoogleDriveServiceImpl
     }
 
 
+    @Override
+    public CargaArchivoRes guardarArchivoPublicado(
+            MultipartFile archivo,
+            String idTpDoc,
+            String tpDocument,
+            String numDocument,
+            String nombreOriginal,
+            String idDocumentoPublicado,
+            LocalDate fechaPublicacion
+    ) throws IOException {
+
+        validarArchivo(
+                archivo,
+                idTpDoc,
+                tpDocument,
+                numDocument,
+                nombreOriginal
+        );
+
+        validarTexto(
+                idDocumentoPublicado,
+                "El ID del documento publicado es obligatorio."
+        );
+
+        if (fechaPublicacion == null) {
+            throw new IllegalArgumentException(
+                    "La fecha de publicacion es obligatoria."
+            );
+        }
+
+        String nombreGenerado =
+                generarNombreArchivoPorFecha(
+                        fechaPublicacion,
+                        tpDocument,
+                        numDocument,
+                        nombreOriginal
+                );
+
+        Map<String, String> appProperties =
+                new HashMap<>();
+
+        appProperties.put(
+                "idTpDoc",
+                idTpDoc.trim()
+        );
+        appProperties.put(
+                "tpDocument",
+                tpDocument.trim()
+        );
+        appProperties.put(
+                "numDocument",
+                numDocument.trim()
+        );
+        appProperties.put(
+                "nombreOriginal",
+                nombreOriginal.trim()
+        );
+        appProperties.put(
+                "idDocumentoPublicado",
+                idDocumentoPublicado.trim()
+        );
+
+        /*
+         * Idempotencia fuerte de la publicacion oficial.
+         *
+         * Se busca primero por idDocumentoPublicado en todo Drive.
+         * Esto permite recuperar una subida que ya llego a Drive
+         * aunque la transaccion Oracle haya fallado despues, incluso
+         * si el reintento ocurre otro dia o el archivo ya cambio de
+         * carpeta durante el ciclo operativo.
+         *
+         * Solo si el documento no existe se crean Preparacion_* y
+         * la carpeta de periodo correspondiente.
+         */
+        List<File> existentes =
+                buscarArchivosPorAppPropertyGlobal(
+                        "idDocumentoPublicado",
+                        idDocumentoPublicado.trim()
+                );
+
+        File carpetaPeriodo = null;
+
+        if (existentes.isEmpty()) {
+
+            String carpetaPreparacionId =
+                    obtenerCarpetaPreparacion(
+                            idTpDoc
+                    );
+
+            String nombrePeriodo =
+                    obtenerNombreCarpetaQuincenaPorFecha(
+                            idTpDoc,
+                            fechaPublicacion
+                    );
+
+            carpetaPeriodo =
+                    obtenerOCrearCarpeta(
+                            nombrePeriodo,
+                            carpetaPreparacionId
+                    );
+
+            /*
+             * Compatibilidad defensiva con una ejecucion anterior
+             * que hubiera creado el archivo sin idDocumentoPublicado.
+             */
+            existentes =
+                    buscarArchivosPorNombre(
+                            nombreGenerado,
+                            carpetaPeriodo.getId()
+                    );
+        }
+
+        if (existentes.size() > 1) {
+            throw new IllegalStateException(
+                    "Existe mas de un archivo Drive para el documento publicado "
+                            + idDocumentoPublicado
+                            + "."
+            );
+        }
+
+        String contentType =
+                archivo.getContentType();
+
+        if (
+                contentType == null
+                        || contentType.trim().isEmpty()
+        ) {
+            contentType =
+                    MIME_TYPE_BINARIO;
+        }
+
+        InputStreamContent mediaContent =
+                new InputStreamContent(
+                        contentType,
+                        archivo.getInputStream()
+                );
+
+        mediaContent.setLength(
+                archivo.getSize()
+        );
+
+        File archivoGuardado;
+
+        if (existentes.size() == 1) {
+
+            File existente =
+                    existentes.get(0);
+
+            File identidadEsperada =
+                    new File();
+
+            identidadEsperada.setAppProperties(
+                    appProperties
+            );
+
+            validarMismaIdentidadDocumento(
+                    identidadEsperada,
+                    existente
+            );
+
+            File metadataActualizacion =
+                    new File();
+
+            metadataActualizacion.setName(
+                    nombreGenerado
+            );
+
+            metadataActualizacion.setAppProperties(
+                    new HashMap<>(
+                            appProperties
+                    )
+            );
+
+            archivoGuardado =
+                    drive.files()
+                            .update(
+                                    existente.getId(),
+                                    metadataActualizacion,
+                                    mediaContent
+                            )
+                            .setSupportsAllDrives(true)
+                            .setFields(
+                                    "id,name,mimeType,size,"
+                                            + "webViewLink,parents,"
+                                            + "appProperties"
+                            )
+                            .execute();
+
+            log.info(
+                    "Documento oficial +Vida reutilizado en Drive. id={}, idTpDoc={}, numeroDocumento={}, idDocumentoPublicado={}",
+                    archivoGuardado.getId(),
+                    idTpDoc,
+                    numDocument,
+                    idDocumentoPublicado
+            );
+
+        } else {
+
+            if (carpetaPeriodo == null) {
+                throw new IllegalStateException(
+                        "No fue posible resolver la carpeta Drive para crear el documento oficial."
+                );
+            }
+
+            File metadata =
+                    new File();
+
+            metadata.setName(
+                    nombreGenerado
+            );
+
+            metadata.setParents(
+                    Collections.singletonList(
+                            carpetaPeriodo.getId()
+                    )
+            );
+
+            metadata.setAppProperties(
+                    appProperties
+            );
+
+            archivoGuardado =
+                    drive.files()
+                            .create(
+                                    metadata,
+                                    mediaContent
+                            )
+                            .setSupportsAllDrives(true)
+                            .setFields(
+                                    "id,name,mimeType,size,"
+                                            + "webViewLink,parents,"
+                                            + "appProperties"
+                            )
+                            .execute();
+
+            log.info(
+                    "Documento oficial +Vida creado en Drive. id={}, idTpDoc={}, numeroDocumento={}, idDocumentoPublicado={}",
+                    archivoGuardado.getId(),
+                    idTpDoc,
+                    numDocument,
+                    idDocumentoPublicado
+            );
+        }
+
+        return CargaArchivoRes
+                .builder()
+                .flagResultado("0")
+                .mensaje(
+                        "Guardado Exitosamente"
+                )
+                .archivo(
+                        new ArchivoUploadRes(
+                                archivoGuardado.getName(),
+                                archivoGuardado.getWebViewLink()
+                        )
+                )
+                .build();
+    }
+
     /*
      * ==========================================================
-     * INFORMACIÓN / DESCARGA
+     * INFORMACIÃ“N / DESCARGA
      * ==========================================================
      */
 
@@ -267,12 +527,12 @@ public class GoogleDriveServiceImpl
 
     /*
      * ==========================================================
-     * JOB: LOCALIZAR CARPETA EXACTA DEL PERÍODO
+     * JOB: LOCALIZAR CARPETA EXACTA DEL PERÃODO
      * ==========================================================
      */
 
     @Override
-    public File obtenerCarpetaPeriodo(
+    public Optional<File> buscarCarpetaPeriodo(
             String idTpDoc,
             LocalDate fechaInicio,
             LocalDate fechaFin
@@ -287,10 +547,28 @@ public class GoogleDriveServiceImpl
                 fechaFin
         );
 
-        String carpetaPreparacionId =
-                obtenerCarpetaPreparacion(
+        String nombrePreparacion =
+                resolverNombreCarpetaPreparacion(
                         idTpDoc
                 );
+
+        List<File> preparaciones =
+                buscarCarpetas(
+                        nombrePreparacion,
+                        properties.getFolderId()
+                );
+
+        if (preparaciones.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (preparaciones.size() > 1) {
+            throw new IllegalStateException(
+                    "Existe mas de una carpeta Drive de preparacion "
+                            + nombrePreparacion
+                            + "."
+            );
+        }
 
         String nombrePeriodo =
                 fechaInicio
@@ -300,32 +578,52 @@ public class GoogleDriveServiceImpl
         List<File> carpetas =
                 buscarCarpetas(
                         nombrePeriodo,
-                        carpetaPreparacionId
+                        preparaciones.get(0).getId()
                 );
 
         if (carpetas.isEmpty()) {
-
-            throw new IllegalStateException(
-                    "No existe la carpeta Drive correspondiente "
-                            + "al período "
-                            + nombrePeriodo
-                            + " para el tipo documental "
-                            + idTpDoc
-                            + "."
-            );
+            return Optional.empty();
         }
 
         if (carpetas.size() > 1) {
-
             throw new IllegalStateException(
-                    "Existe más de una carpeta Drive con el "
-                            + "mismo período "
+                    "Existe mas de una carpeta Drive con el mismo periodo "
                             + nombrePeriodo
                             + "."
             );
         }
 
-        return carpetas.get(0);
+        return Optional.of(
+                carpetas.get(0)
+        );
+    }
+
+
+    @Override
+    public File obtenerCarpetaPeriodo(
+            String idTpDoc,
+            LocalDate fechaInicio,
+            LocalDate fechaFin
+    ) throws IOException {
+
+        String nombrePeriodo =
+                fechaInicio
+                        + "_"
+                        + fechaFin;
+
+        return buscarCarpetaPeriodo(
+                idTpDoc,
+                fechaInicio,
+                fechaFin
+        ).orElseThrow(
+                () -> new IllegalStateException(
+                        "No existe la carpeta Drive correspondiente al periodo "
+                                + nombrePeriodo
+                                + " para el tipo documental "
+                                + idTpDoc
+                                + "."
+                )
+        );
     }
 
 
@@ -453,7 +751,7 @@ public class GoogleDriveServiceImpl
         if (existentes.size() > 1) {
 
             throw new IllegalStateException(
-                    "Existe más de un archivo llamado "
+                    "Existe mÃ¡s de un archivo llamado "
                             + nombreArchivo
                             + " dentro de la carpeta destino."
             );
@@ -493,7 +791,7 @@ public class GoogleDriveServiceImpl
                             .execute();
 
             log.info(
-                    "Archivo Drive actualizado por reejecución. "
+                    "Archivo Drive actualizado por reejecuciÃ³n. "
                             + "id={}, nombre={}",
                     actualizado.getId(),
                     actualizado.getName()
@@ -570,7 +868,7 @@ public class GoogleDriveServiceImpl
         if (existentes.size() > 1) {
 
             throw new IllegalStateException(
-                    "Existe más de una carpeta llamada "
+                    "Existe mÃ¡s de una carpeta llamada "
                             + nombreCarpeta
                             + " bajo el mismo padre Drive."
             );
@@ -869,7 +1167,7 @@ public class GoogleDriveServiceImpl
      * Google Drive trata archivos y carpetas mediante
      * el mismo recurso File.
      *
-     * La operación es idempotente:
+     * La operaciÃ³n es idempotente:
      * si ya se encuentra bajo el nuevo padre, no se mueve.
      */
 
@@ -967,7 +1265,7 @@ public class GoogleDriveServiceImpl
 
     /*
      * ==========================================================
-     * BÚSQUEDAS INTERNAS
+     * BÃšSQUEDAS INTERNAS
      * ==========================================================
      */
 
@@ -1020,6 +1318,198 @@ public class GoogleDriveServiceImpl
     }
 
 
+    private List<File> buscarArchivosPorAppPropertyGlobal(
+            String clave,
+            String valor
+    ) throws IOException {
+
+        validarTexto(
+                clave,
+                "La clave appProperty es obligatoria."
+        );
+
+        validarTexto(
+                valor,
+                "El valor appProperty es obligatorio."
+        );
+
+        String query =
+                "appProperties has { key='"
+                        + escaparTextoQuery(clave.trim())
+                        + "' and value='"
+                        + escaparTextoQuery(valor.trim())
+                        + "' } "
+                        + "and trashed = false "
+                        + "and mimeType != '"
+                        + MIME_TYPE_FOLDER
+                        + "'";
+
+        FileList resultado =
+                drive.files()
+                        .list()
+                        .setQ(query)
+                        .setSupportsAllDrives(true)
+                        .setIncludeItemsFromAllDrives(true)
+                        .setFields(
+                                "files("
+                                        + "id,name,mimeType,size,"
+                                        + "webViewLink,parents,"
+                                        + "appProperties"
+                                        + ")"
+                        )
+                        .execute();
+
+        if (resultado.getFiles() == null) {
+            return Collections.emptyList();
+        }
+
+        return resultado.getFiles();
+    }
+
+
+    private List<File> buscarArchivosPorAppProperty(
+            String clave,
+            String valor,
+            String parentId
+    ) throws IOException {
+
+        validarTexto(
+                clave,
+                "La clave appProperty es obligatoria."
+        );
+
+        validarTexto(
+                valor,
+                "El valor appProperty es obligatorio."
+        );
+
+        validarTexto(
+                parentId,
+                "La carpeta padre es obligatoria."
+        );
+
+        String query =
+                "appProperties has { key='"
+                        + escaparTextoQuery(clave.trim())
+                        + "' and value='"
+                        + escaparTextoQuery(valor.trim())
+                        + "' } "
+                        + "and '"
+                        + escaparTextoQuery(parentId.trim())
+                        + "' in parents "
+                        + "and trashed = false "
+                        + "and mimeType != '"
+                        + MIME_TYPE_FOLDER
+                        + "'";
+
+        FileList resultado =
+                drive.files()
+                        .list()
+                        .setQ(query)
+                        .setSupportsAllDrives(true)
+                        .setIncludeItemsFromAllDrives(true)
+                        .setFields(
+                                "files("
+                                        + "id,name,mimeType,size,"
+                                        + "webViewLink,parents,"
+                                        + "appProperties"
+                                        + ")"
+                        )
+                        .execute();
+
+        if (resultado.getFiles() == null) {
+            return Collections.emptyList();
+        }
+
+        return resultado.getFiles();
+    }
+
+
+    private String obtenerNombreCarpetaQuincenaPorFecha(
+            String idTpDoc,
+            LocalDate fecha
+    ) {
+
+        validarIdTpDoc(
+                idTpDoc
+        );
+
+        if (fecha == null) {
+            throw new IllegalArgumentException(
+                    "La fecha documental es obligatoria."
+            );
+        }
+
+        YearMonth yearMonth =
+                YearMonth.from(
+                        fecha
+                );
+
+        LocalDate inicio;
+        LocalDate fin;
+
+        if ("244".equals(idTpDoc.trim())) {
+
+            if (fecha.getDayOfMonth() <= 15) {
+                inicio = yearMonth.atDay(1);
+                fin = yearMonth.atDay(15);
+            } else {
+                inicio = yearMonth.atDay(16);
+                fin = yearMonth.atEndOfMonth();
+            }
+
+        } else if (
+                fecha.getDayOfMonth() >= 4
+                        && fecha.getDayOfMonth() <= 18
+        ) {
+
+            inicio = yearMonth.atDay(4);
+            fin = yearMonth.atDay(18);
+
+        } else if (fecha.getDayOfMonth() >= 19) {
+
+            inicio = yearMonth.atDay(19);
+            fin = yearMonth.plusMonths(1).atDay(3);
+
+        } else {
+
+            inicio = yearMonth.minusMonths(1).atDay(19);
+            fin = yearMonth.atDay(3);
+        }
+
+        return inicio
+                + "_"
+                + fin;
+    }
+
+
+    private String generarNombreArchivoPorFecha(
+            LocalDate fecha,
+            String codTipoDocumento,
+            String numeroDocumento,
+            String nombreOriginal
+    ) {
+
+        if (fecha == null) {
+            throw new IllegalArgumentException(
+                    "La fecha documental es obligatoria."
+            );
+        }
+
+        return fecha
+                .format(
+                        FORMATO_FECHA_ARCHIVO
+                )
+                + codTipoDocumento.trim()
+                + numeroDocumento.trim()
+                + nombreOriginal
+                        .trim()
+                        .replaceAll(
+                                "\\s+",
+                                ""
+                        );
+    }
+
     private List<File> buscarArchivosPorNombre(
             String nombreArchivo,
             String parentId
@@ -1071,7 +1561,7 @@ public class GoogleDriveServiceImpl
 
     /*
      * ==========================================================
-     * ESTRUCTURA EXISTENTE DE PREPARACIÓN
+     * ESTRUCTURA EXISTENTE DE PREPARACIÃ“N
      * ==========================================================
      */
 
@@ -1079,30 +1569,11 @@ public class GoogleDriveServiceImpl
             String idTpDoc
     ) throws IOException {
 
-        validarIdTpDoc(
-                idTpDoc
-        );
-
-        String nombreCarpeta;
-
-        if (
-                "244".equals(
-                        idTpDoc.trim()
-                )
-        ) {
-
-            nombreCarpeta =
-                    "Preparacion_6012";
-
-        } else {
-
-            nombreCarpeta =
-                    "Preparacion_Declaracion_Descuento";
-        }
-
         File carpeta =
                 obtenerOCrearCarpeta(
-                        nombreCarpeta,
+                        resolverNombreCarpetaPreparacion(
+                                idTpDoc
+                        ),
                         properties.getFolderId()
                 );
 
@@ -1110,9 +1581,29 @@ public class GoogleDriveServiceImpl
     }
 
 
+    private String resolverNombreCarpetaPreparacion(
+            String idTpDoc
+    ) {
+
+        validarIdTpDoc(
+                idTpDoc
+        );
+
+        if (
+                "244".equals(
+                        idTpDoc.trim()
+                )
+        ) {
+            return "Preparacion_6012";
+        }
+
+        return "Preparacion_Declaracion_Descuento";
+    }
+
+
     /*
      * ==========================================================
-     * PERÍODO DE PREPARACIÓN SEGÚN TIPO DOCUMENTAL
+     * PERÃODO DE PREPARACIÃ“N SEGÃšN TIPO DOCUMENTAL
      * ==========================================================
      *
      * MAPFRE - 244:
@@ -1121,8 +1612,8 @@ public class GoogleDriveServiceImpl
      * PERSONAL - 247:
      * 04-18 / 19-03 del mes siguiente
      *
-     * La carpeta de preparación debe utilizar exactamente
-     * el mismo período que posteriormente consumirá el job.
+     * La carpeta de preparaciÃ³n debe utilizar exactamente
+     * el mismo perÃ­odo que posteriormente consumirÃ¡ el job.
      */
 
     private String obtenerNombreCarpetaQuincenaActual(
@@ -1302,7 +1793,7 @@ public class GoogleDriveServiceImpl
 
         validarTexto(
                 numDocument,
-                "El número de documento del titular es obligatorio."
+                "El nÃºmero de documento del titular es obligatorio."
         );
 
         validarTexto(
@@ -1347,7 +1838,7 @@ public class GoogleDriveServiceImpl
         ) {
 
             throw new IllegalArgumentException(
-                    "El período Drive es obligatorio."
+                    "El perÃ­odo Drive es obligatorio."
             );
         }
 

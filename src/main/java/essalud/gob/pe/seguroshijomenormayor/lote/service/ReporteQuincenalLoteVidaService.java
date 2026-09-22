@@ -1,19 +1,15 @@
 package essalud.gob.pe.seguroshijomenormayor.lote.service;
 
 import com.google.api.services.drive.model.File;
-
 import essalud.gob.pe.seguroshijomenormayor.lote.model.DocumentoDriveLoteVida;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.FilaReporteLoteVida;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.ReporteExcelLoteVida;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.ReporteLoteVidaItem;
-import essalud.gob.pe.seguroshijomenormayor.lote.model.ResultadoCierreDrive;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.ResultadoReporteLoteVida;
 import essalud.gob.pe.seguroshijomenormayor.lote.repository.ReporteLoteVidaRepository;
 import essalud.gob.pe.seguroshijomenormayor.service.GoogleDriveService;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -21,92 +17,68 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class ReporteQuincenalLoteVidaService {
 
-    private static final String
-            DESTINO_MAPFRE =
+    private static final String DESTINO_MAPFRE =
             "MAPFRE";
 
-    private static final String
-            DESTINO_PERSONAL =
-            "PERSONAL";
-
-    private static final String
-            ID_TP_DOC_MAPFRE =
+    private static final String ID_TP_DOC_MAPFRE =
             "244";
 
-    private static final String
-            ID_TP_DOC_PERSONAL =
-            "247";
+    private final GoogleDriveService googleDriveService;
+    private final ExtractorDocumentosDriveLoteVidaService extractorDrive;
+    private final ReporteLoteVidaRepository reporteRepository;
+    private final GeneradorExcelLoteVidaService generadorExcel;
 
-    private final GoogleDriveService
-            googleDriveService;
-
-    private final ExtractorDocumentosDriveLoteVidaService
-            extractorDrive;
-
-    private final ReporteLoteVidaRepository
-            reporteRepository;
-
-    private final GeneradorExcelLoteVidaService
-            generadorExcel;
-
-    private final CierreDriveLoteVidaService
-            cierreDrive;
-
-    public ResultadoReporteLoteVida generar(
-            String destinatario,
+    /*
+     * Reporte productivo MAPFRE.
+     *
+     * La busqueda del periodo es NO destructiva:
+     * si no existe una carpeta de preparacion para la quincena,
+     * el job termina sin crear carpetas, Excel, lotes ni entregas.
+     */
+    public Optional<ResultadoReporteLoteVida> generarMapfre(
             LocalDate fechaInicio,
             LocalDate fechaFin
     ) throws IOException {
-
-        String destino =
-                normalizarDestino(
-                        destinatario
-                );
 
         validarPeriodo(
                 fechaInicio,
                 fechaFin
         );
 
-        String idTpDoc =
-                resolverIdTpDoc(
-                        destino
-                );
-
-        /*
-         * Primera ejecucion:
-         * obtiene el periodo desde Preparacion.
-         *
-         * Reejecucion:
-         * si el periodo ya fue cerrado, trabaja
-         * directamente sobre la carpeta final.
-         */
-        File carpetaPeriodo =
-                cierreDrive
-                        .resolverCarpetaPeriodoTrabajo(
-                                destino,
+        Optional<File> carpetaEncontrada =
+                googleDriveService
+                        .buscarCarpetaPeriodo(
+                                ID_TP_DOC_MAPFRE,
                                 fechaInicio,
                                 fechaFin
                         );
 
-        if (
-                carpetaPeriodo == null
-                        || campoVacio(
-                                carpetaPeriodo.getId()
-                        )
-        ) {
+        if (carpetaEncontrada.isEmpty()) {
 
-            throw new IllegalStateException(
-                    "Google Drive no devolvió "
-                            + "la carpeta del período."
+            log.info(
+                    "MAPFRE sin documentos para el periodo {} a {}. No se genera lote.",
+                    fechaInicio,
+                    fechaFin
             );
+
+            return Optional.empty();
         }
+
+        File carpetaPeriodo =
+                carpetaEncontrada.get();
+
+        validarCarpetaPeriodo(
+                carpetaPeriodo,
+                fechaInicio,
+                fechaFin
+        );
 
         List<File> archivosDrive =
                 googleDriveService
@@ -114,76 +86,54 @@ public class ReporteQuincenalLoteVidaService {
                                 carpetaPeriodo.getId()
                         );
 
-        List<DocumentoDriveLoteVida>
-                documentosDrive =
+        List<DocumentoDriveLoteVida> documentosDrive =
                 extractorDrive.extraer(
                         archivosDrive,
-                        idTpDoc
+                        ID_TP_DOC_MAPFRE
                 );
 
+        /*
+         * Si la carpeta existe, debe provenir de al menos una
+         * publicacion documental real. Una carpeta vacia es una
+         * inconsistencia y no se trata como una quincena vacia.
+         */
         if (documentosDrive.isEmpty()) {
-
             throw new IllegalStateException(
-                    "El período "
+                    "La carpeta MAPFRE del periodo "
                             + fechaInicio
                             + " a "
                             + fechaFin
-                            + " no contiene documentos "
-                            + destino
-                            + " para procesar. "
-                            + "No se generará un reporte vacío."
+                            + " existe, pero no contiene PDFs 244 validos."
             );
         }
 
         List<FilaReporteLoteVida> filas =
                 new ArrayList<>();
 
-        for (
-                DocumentoDriveLoteVida documento
-                : documentosDrive
-        ) {
+        for (DocumentoDriveLoteVida documento : documentosDrive) {
 
             ReporteLoteVidaItem item =
                     reporteRepository
                             .buscarDocumentoPublicado(
-                                    documento
-                                            .getTipoDocumentoTitular(),
-
-                                    documento
-                                            .getNumeroDocumentoTitular(),
-
-                                    documento
-                                            .getTipoDocumentoLogico(),
-
+                                    documento.getTipoDocumentoTitular(),
+                                    documento.getNumeroDocumentoTitular(),
+                                    documento.getTipoDocumentoLogico(),
                                     fechaInicio,
                                     fechaFin
                             )
                             .orElseThrow(
-                                    () ->
-                                            new IllegalStateException(
-                                                    "No se encontró en Oracle "
-                                                            + "el documento publicado "
-                                                            + "correspondiente al PDF "
-                                                            + "de Drive "
-                                                            + documento
-                                                            .getNombreArchivo()
-                                                            + "."
-                                            )
+                                    () -> new IllegalStateException(
+                                            "No se encontro en Oracle el documento publicado correspondiente al PDF Drive "
+                                                    + documento.getNombreArchivo()
+                                                    + "."
+                                    )
                             );
 
-            if (
-                    item.getFechaAfiliacion()
-                            == null
-            ) {
-
+            if (item.getFechaAfiliacion() == null) {
                 throw new IllegalStateException(
                         "El proceso "
-                                + item
-                                .getRegistroInternoProceso()
-                                + " no cuenta con una "
-                                + "Autorización de Descuento "
-                                + "publicada para determinar "
-                                + "la fecha de afiliación."
+                                + item.getRegistroInternoProceso()
+                                + " no cuenta con fecha de afiliacion."
                 );
             }
 
@@ -193,41 +143,18 @@ public class ReporteQuincenalLoteVidaService {
             fila.setNumeroDocumentoTitular(
                     item.getNumeroDocumentoTitular()
             );
-
             fila.setNombresApellidosTitular(
                     item.getNombresApellidosTitular()
             );
-
             fila.setFechaAfiliacion(
-                    item
-                            .getFechaAfiliacion()
-                            .toLocalDate()
+                    item.getFechaAfiliacion().toLocalDate()
             );
-
-            /*
-             * Solamente MAPFRE presenta la cantidad
-             * de beneficiarios en su reporte.
-             */
-            if (
-                    DESTINO_MAPFRE.equals(
-                            destino
-                    )
-            ) {
-
-                fila.setCantidadBeneficiarios(
-                        item.getCantidadBeneficiarios()
-                );
-            }
-
+            fila.setCantidadBeneficiarios(
+                    item.getCantidadBeneficiarios()
+            );
             fila.setRegistroInternoProceso(
                     item.getRegistroInternoProceso()
             );
-
-            /*
-             * El enlace visible del Excel apunta
-             * al PDF de Google Drive del lote,
-             * no a RUTA_ARCHIVO de SFTP.
-             */
             fila.setUrlPdf(
                     documento.getWebViewLink()
             );
@@ -237,20 +164,15 @@ public class ReporteQuincenalLoteVidaService {
             );
         }
 
-        /*
-         * Orden determinístico.
-         * No altera ninguna regla de negocio.
-         */
         filas.sort(
                 Comparator.comparing(
-                        FilaReporteLoteVida::
-                                getNumeroDocumentoTitular
+                        FilaReporteLoteVida::getNumeroDocumentoTitular
                 )
         );
 
         ReporteExcelLoteVida reporte =
                 generadorExcel.generar(
-                        destino,
+                        DESTINO_MAPFRE,
                         fechaInicio,
                         fechaFin,
                         filas
@@ -267,192 +189,122 @@ public class ReporteQuincenalLoteVidaService {
 
         if (
                 reporteDrive == null
-                        || campoVacio(
-                                reporteDrive.getId()
-                        )
+                        || campoVacio(reporteDrive.getId())
         ) {
-
             throw new IllegalStateException(
-                    "Google Drive no confirmó "
-                            + "el almacenamiento del reporte."
+                    "Google Drive no confirmo el almacenamiento del Excel MAPFRE."
             );
         }
 
-        /*
-         * El periodo se cierra solamente cuando:
-         *
-         * - los PDFs fueron procesados;
-         * - Oracle fue validado;
-         * - el Excel fue generado;
-         * - Drive confirmó el almacenamiento del Excel.
-         */
-        String idCarpetaEntrega;
-        String urlCarpetaEntrega;
+        File carpetaEntrega =
+                googleDriveService
+                        .obtenerInformacionArchivo(
+                                carpetaPeriodo.getId()
+                        );
 
-        /*
-         * MAPFRE debe permanecer en Preparacion hasta completar:
-         *
-         * OTP -> descarga -> acuse.
-         *
-         * La derivacion final de MAPFRE ocurre despues del acuse.
-         *
-         * PERSONAL conserva el comportamiento ya existente
-         * de este servicio.
-         */
-        if (DESTINO_MAPFRE.equals(destino)) {
-
-            /*
-             * La identidad real del lote es el ID de la carpeta
-             * de Preparacion.
-             *
-             * El movimiento post-acuse conserva este mismo ID.
-             */
-            idCarpetaEntrega =
-                    carpetaPeriodo
-                            .getId()
-                            .trim();
-
-            /*
-             * Drive puede devolver webViewLink al consultar
-             * metadata completa.
-             *
-             * Sin embargo, URL_ACCESO no debe depender de que
-             * ese campo opcional venga informado: el ID ya fue
-             * resuelto y validado previamente.
-             */
-            File carpetaEntrega =
-                    googleDriveService
-                            .obtenerInformacionArchivo(
-                                    idCarpetaEntrega
-                            );
-
-            if (
-                    carpetaEntrega != null
-                            &&
-                    !campoVacio(
-                            carpetaEntrega.getId()
-                    )
-                            &&
-                    !idCarpetaEntrega.equals(
-                            carpetaEntrega
-                                    .getId()
-                                    .trim()
-                    )
-            ) {
-                throw new IllegalStateException(
-                        "Google Drive devolvio una carpeta MAPFRE distinta a la esperada."
-                );
-            }
-
-            if (
-                    carpetaEntrega != null
-                            &&
-                    !campoVacio(
-                            carpetaEntrega.getWebViewLink()
-                    )
-            ) {
-
-                urlCarpetaEntrega =
-                        carpetaEntrega
-                                .getWebViewLink()
-                                .trim();
-
-            } else {
-
-                urlCarpetaEntrega =
-                        "https://drive.google.com/drive/folders/"
-                                + idCarpetaEntrega;
-            }
-
-        } else {
-
-            ResultadoCierreDrive cierreResultado =
-                    cierreDrive
-                            .cerrarCarpetaPeriodo(
-                                    destino,
-                                    fechaInicio,
-                                    fechaFin,
-                                    carpetaPeriodo.getId(),
-                                    filas.size()
-                            );
-
-            idCarpetaEntrega =
-                    cierreResultado.getIdCarpetaFinal();
-
-            urlCarpetaEntrega =
-                    cierreResultado.getUrlCarpetaFinal();
+        if (
+                carpetaEntrega == null
+                        || campoVacio(carpetaEntrega.getId())
+                        || !carpetaPeriodo.getId().equals(
+                                carpetaEntrega.getId().trim()
+                        )
+        ) {
+            throw new IllegalStateException(
+                    "Google Drive devolvio una carpeta MAPFRE distinta a la esperada."
+            );
         }
 
+        String urlCarpeta =
+                !campoVacio(carpetaEntrega.getWebViewLink())
+                        ? carpetaEntrega.getWebViewLink().trim()
+                        : "https://drive.google.com/drive/folders/"
+                                + carpetaPeriodo.getId();
+
+        ResultadoReporteLoteVida resultado =
+                new ResultadoReporteLoteVida(
+                        DESTINO_MAPFRE,
+                        fechaInicio,
+                        fechaFin,
+                        filas.size(),
+                        carpetaPeriodo.getId(),
+                        urlCarpeta,
+                        reporteDrive.getId(),
+                        reporteDrive.getName(),
+                        reporteDrive.getWebViewLink()
+                );
+
         log.info(
-                "Reporte quincenal +Vida generado. "
-                        + "destinatario={}, periodo={} a {}, "
-                        + "documentos={}, carpetaDrive={}, "
-                        + "reporteDrive={}",
-                destino,
+                "Reporte MAPFRE generado. periodo={} a {}, documentos={}, carpetaDrive={}, reporteDrive={}",
                 fechaInicio,
                 fechaFin,
                 filas.size(),
-                idCarpetaEntrega,
+                carpetaPeriodo.getId(),
                 reporteDrive.getId()
         );
 
-        return new ResultadoReporteLoteVida(
-                destino,
-                fechaInicio,
-                fechaFin,
-                filas.size(),
-                idCarpetaEntrega,
-                urlCarpetaEntrega,
-                reporteDrive.getId(),
-                reporteDrive.getName(),
-                reporteDrive.getWebViewLink()
+        return Optional.of(
+                resultado
         );
     }
 
-    private String resolverIdTpDoc(
-            String destinatario
-    ) {
+    /*
+     * Compatibilidad temporal para pruebas antiguas.
+     * No existe ruta productiva PERSONAL por este metodo.
+     */
+    @Deprecated
+    public ResultadoReporteLoteVida generar(
+            String destinatario,
+            LocalDate fechaInicio,
+            LocalDate fechaFin
+    ) throws IOException {
 
         if (
-                DESTINO_MAPFRE.equals(
-                        destinatario
-                )
+                destinatario == null
+                        || !DESTINO_MAPFRE.equalsIgnoreCase(
+                                destinatario.trim()
+                        )
         ) {
-            return ID_TP_DOC_MAPFRE;
+            throw new IllegalArgumentException(
+                    "ReporteQuincenalLoteVidaService solo procesa MAPFRE. PERSONAL usa el pipeline multidestino."
+            );
         }
 
-        return ID_TP_DOC_PERSONAL;
+        return generarMapfre(
+                fechaInicio,
+                fechaFin
+        ).orElseThrow(
+                () -> new IllegalStateException(
+                        "No existe lote MAPFRE para el periodo solicitado."
+                )
+        );
     }
 
-    private String normalizarDestino(
-            String destinatario
+    private void validarCarpetaPeriodo(
+            File carpeta,
+            LocalDate inicio,
+            LocalDate fin
     ) {
 
-        if (campoVacio(destinatario)) {
-
-            throw new IllegalArgumentException(
-                    "El destinatario del lote "
-                            + "es obligatorio."
-            );
-        }
-
-        String valor =
-                destinatario
-                        .trim()
-                        .toUpperCase();
-
         if (
-                !DESTINO_MAPFRE.equals(valor)
-                        && !DESTINO_PERSONAL.equals(valor)
+                carpeta == null
+                        || campoVacio(carpeta.getId())
+                        || campoVacio(carpeta.getName())
         ) {
-
-            throw new IllegalArgumentException(
-                    "El destinatario solamente "
-                            + "puede ser MAPFRE o PERSONAL."
+            throw new IllegalStateException(
+                    "Google Drive devolvio una carpeta MAPFRE invalida."
             );
         }
 
-        return valor;
+        String esperado =
+                inicio
+                        + "_"
+                        + fin;
+
+        if (!esperado.equals(carpeta.getName())) {
+            throw new IllegalStateException(
+                    "La carpeta MAPFRE no corresponde al periodo esperado."
+            );
+        }
     }
 
     private void validarPeriodo(
@@ -460,22 +312,15 @@ public class ReporteQuincenalLoteVidaService {
             LocalDate fin
     ) {
 
-        if (
-                inicio == null
-                        || fin == null
-        ) {
-
+        if (inicio == null || fin == null) {
             throw new IllegalArgumentException(
-                    "El período del lote "
-                            + "es obligatorio."
+                    "El periodo MAPFRE es obligatorio."
             );
         }
 
         if (inicio.isAfter(fin)) {
-
             throw new IllegalArgumentException(
-                    "El inicio del período no puede "
-                            + "ser posterior al fin."
+                    "El inicio del periodo MAPFRE no puede ser posterior al fin."
             );
         }
     }
@@ -483,7 +328,6 @@ public class ReporteQuincenalLoteVidaService {
     private boolean campoVacio(
             String valor
     ) {
-
         return valor == null
                 || valor.trim().isEmpty();
     }

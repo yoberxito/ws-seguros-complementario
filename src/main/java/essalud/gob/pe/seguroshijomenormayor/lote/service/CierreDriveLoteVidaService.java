@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -20,20 +19,11 @@ public class CierreDriveLoteVidaService {
     private static final String DESTINO_MAPFRE =
             "MAPFRE";
 
-    private static final String DESTINO_PERSONAL =
-            "PERSONAL";
-
     private static final String ID_TP_DOC_MAPFRE =
             "244";
 
-    private static final String ID_TP_DOC_PERSONAL =
-            "247";
-
-    private static final String CARPETA_FINAL_MAPFRE =
-            "Seguro +Vida - Afiliaciones MAPFRE";
-
-    private static final String CARPETA_FINAL_PERSONAL =
-            "Seguro +Vida - Autorizaciones de Descuento - Personal EsSalud";
+    private static final String CARPETA_HISTORICAL_MAPFRE =
+            "MAPFRE_HISTORICAL";
 
     private static final String MIME_TYPE_FOLDER =
             "application/vnd.google-apps.folder";
@@ -42,15 +32,9 @@ public class CierreDriveLoteVidaService {
     private final GoogleDriveProperties googleDriveProperties;
 
     /*
-     * Resuelve la carpeta sobre la cual debe trabajar
-     * el reporte.
+     * Busqueda no destructiva para reintentos MAPFRE.
      *
-     * Primera ejecucion:
-     *   usa la carpeta que todavia esta en Preparacion.
-     *
-     * Reejecucion:
-     *   si la carpeta ya fue cerrada/movida, utiliza
-     *   directamente la carpeta final.
+     * Nunca crea Historical ni Preparacion.
      */
     public File resolverCarpetaPeriodoTrabajo(
             String destinatario,
@@ -58,20 +42,14 @@ public class CierreDriveLoteVidaService {
             LocalDate fechaFin
     ) throws IOException {
 
-        String destino =
-                normalizarDestinatario(
-                        destinatario
-                );
+        validarMapfre(
+                destinatario
+        );
 
         validarPeriodo(
                 fechaInicio,
                 fechaFin
         );
-
-        File carpetaDestino =
-                obtenerCarpetaDestinoFinal(
-                        destino
-                );
 
         String nombrePeriodo =
                 construirNombrePeriodo(
@@ -79,65 +57,65 @@ public class CierreDriveLoteVidaService {
                         fechaFin
                 );
 
-        List<File> cerradas =
-                googleDriveService
-                        .buscarCarpetas(
-                                nombrePeriodo,
-                                carpetaDestino.getId()
-                        );
+        File historical =
+                buscarHistoricalExistente();
 
-        cerradas =
-                cerradas == null
-                        ? Collections.emptyList()
-                        : cerradas;
+        if (historical != null) {
 
-        if (cerradas.size() > 1) {
+            List<File> cerradas =
+                    googleDriveService
+                            .buscarCarpetas(
+                                    nombrePeriodo,
+                                    historical.getId()
+                            );
 
-            throw new IllegalStateException(
-                    "Existe mas de una carpeta final para el periodo "
-                            + nombrePeriodo
-                            + "."
-            );
+            cerradas =
+                    cerradas == null
+                            ? Collections.emptyList()
+                            : cerradas;
+
+            if (cerradas.size() > 1) {
+                throw new IllegalStateException(
+                        "Existe mas de una carpeta MAPFRE Historical para el periodo "
+                                + nombrePeriodo
+                                + "."
+                );
+            }
+
+            if (cerradas.size() == 1) {
+
+                File carpetaFinal =
+                        cerradas.get(0);
+
+                validarCarpetaPeriodo(
+                        carpetaFinal,
+                        nombrePeriodo
+                );
+
+                return carpetaFinal;
+            }
         }
 
-        if (cerradas.size() == 1) {
-
-            File carpetaFinal =
-                    cerradas.get(0);
-
-            validarCarpetaPeriodo(
-                    carpetaFinal,
-                    nombrePeriodo
-            );
-
-            return carpetaFinal;
-        }
-
-        File carpetaPreparacion =
-                googleDriveService
-                        .obtenerCarpetaPeriodo(
-                                resolverIdTpDoc(
-                                        destino
-                                ),
-                                fechaInicio,
-                                fechaFin
-                        );
-
-        validarCarpetaPeriodo(
-                carpetaPreparacion,
-                nombrePeriodo
-        );
-
-        return carpetaPreparacion;
+        return googleDriveService
+                .buscarCarpetaPeriodo(
+                        ID_TP_DOC_MAPFRE,
+                        fechaInicio,
+                        fechaFin
+                )
+                .orElseThrow(
+                        () -> new IllegalStateException(
+                                "No existe lote MAPFRE para el periodo "
+                                        + nombrePeriodo
+                                        + "."
+                        )
+                );
     }
 
     /*
-     * Cierra el periodo moviendo la carpeta completa
-     * hacia la carpeta oficial del destinatario.
+     * Post-acuse MAPFRE.
      *
-     * Es seguro ante reejecuciones:
-     * si el periodo ya esta en el destino final,
-     * no crea otra carpeta ni vuelve a moverlo.
+     * Historical se crea solamente cuando existe un lote real
+     * que ya fue descargado y confirmado por el destinatario.
      */
     public ResultadoCierreDrive cerrarCarpetaPeriodo(
             String destinatario,
@@ -147,10 +125,9 @@ public class CierreDriveLoteVidaService {
             int cantidadDocumentos
     ) throws IOException {
 
-        String destino =
-                normalizarDestinatario(
-                        destinatario
-                );
+        validarMapfre(
+                destinatario
+        );
 
         validarPeriodo(
                 fechaInicio,
@@ -159,73 +136,20 @@ public class CierreDriveLoteVidaService {
 
         validarTexto(
                 carpetaPeriodoId,
-                "El ID de la carpeta del periodo es obligatorio."
+                "El ID de la carpeta MAPFRE es obligatorio."
         );
 
-        File carpetaDestino =
-                obtenerCarpetaDestinoFinal(
-                        destino
-                );
+        if (cantidadDocumentos <= 0) {
+            throw new IllegalArgumentException(
+                    "MAPFRE no puede cerrar un lote vacio."
+            );
+        }
 
         String nombrePeriodo =
                 construirNombrePeriodo(
                         fechaInicio,
                         fechaFin
                 );
-
-        List<File> existentesFinales =
-                googleDriveService
-                        .buscarCarpetas(
-                                nombrePeriodo,
-                                carpetaDestino.getId()
-                        );
-
-        existentesFinales =
-                existentesFinales == null
-                        ? Collections.emptyList()
-                        : existentesFinales;
-
-        if (existentesFinales.size() > 1) {
-
-            throw new IllegalStateException(
-                    "Existe mas de una carpeta final para el periodo "
-                            + nombrePeriodo
-                            + "."
-            );
-        }
-
-        if (existentesFinales.size() == 1) {
-
-            File existente =
-                    existentesFinales.get(0);
-
-            validarCarpetaPeriodo(
-                    existente,
-                    nombrePeriodo
-            );
-
-            if (
-                    !existente.getId()
-                            .equals(
-                                    carpetaPeriodoId.trim()
-                            )
-            ) {
-
-                throw new IllegalStateException(
-                        "Ya existe otra carpeta final para el mismo periodo."
-                );
-            }
-
-            existente =
-                    asegurarWebViewLink(
-                            existente
-                    );
-
-            return construirResultado(
-                    existente,
-                    cantidadDocumentos
-            );
-        }
 
         File actual =
                 googleDriveService
@@ -238,11 +162,79 @@ public class CierreDriveLoteVidaService {
                 nombrePeriodo
         );
 
+        File historical =
+                buscarHistoricalExistente();
+
+        if (historical != null) {
+
+            List<File> existentes =
+                    googleDriveService
+                            .buscarCarpetas(
+                                    nombrePeriodo,
+                                    historical.getId()
+                            );
+
+            existentes =
+                    existentes == null
+                            ? Collections.emptyList()
+                            : existentes;
+
+            if (existentes.size() > 1) {
+                throw new IllegalStateException(
+                        "Existe mas de una carpeta MAPFRE Historical para el mismo periodo."
+                );
+            }
+
+            if (existentes.size() == 1) {
+
+                File existente =
+                        existentes.get(0);
+
+                validarCarpetaPeriodo(
+                        existente,
+                        nombrePeriodo
+                );
+
+                if (!existente.getId().equals(actual.getId())) {
+                    throw new IllegalStateException(
+                            "Ya existe otra carpeta MAPFRE Historical para el mismo periodo."
+                    );
+                }
+
+                return construirResultado(
+                        asegurarWebViewLink(
+                                existente
+                        ),
+                        cantidadDocumentos
+                );
+            }
+        }
+
+        String rootId =
+                requerido(
+                        googleDriveProperties.getFolderId(),
+                        "google.drive.folder-id es obligatorio."
+                );
+
+        File historicalFinal =
+                historical != null
+                        ? historical
+                        : googleDriveService
+                                .obtenerOCrearCarpeta(
+                                        CARPETA_HISTORICAL_MAPFRE,
+                                        rootId
+                                );
+
+        validarCarpetaGenerica(
+                historicalFinal,
+                "No se pudo resolver MAPFRE_HISTORICAL."
+        );
+
         File movida =
                 googleDriveService
                         .moverArchivo(
                                 actual.getId(),
-                                carpetaDestino.getId()
+                                historicalFinal.getId()
                         );
 
         validarCarpetaPeriodo(
@@ -250,65 +242,69 @@ public class CierreDriveLoteVidaService {
                 nombrePeriodo
         );
 
-        movida =
-                asegurarWebViewLink(
-                        movida
-                );
+        if (!actual.getId().equals(movida.getId())) {
+            throw new IllegalStateException(
+                    "El ID Drive del lote MAPFRE cambio durante el movimiento a Historical."
+            );
+        }
 
         return construirResultado(
-                movida,
+                asegurarWebViewLink(
+                        movida
+                ),
                 cantidadDocumentos
         );
     }
 
-    private File obtenerCarpetaDestinoFinal(
-            String destino
-    ) throws IOException {
+    private File buscarHistoricalExistente()
+            throws IOException {
 
         String rootId =
                 requerido(
-                        googleDriveProperties
-                                .getFolderId(),
+                        googleDriveProperties.getFolderId(),
                         "google.drive.folder-id es obligatorio."
                 );
 
-        File destinoFinal =
+        List<File> carpetas =
                 googleDriveService
-                        .obtenerOCrearCarpeta(
-                                resolverNombreCarpetaFinal(
-                                        destino
-                                ),
+                        .buscarCarpetas(
+                                CARPETA_HISTORICAL_MAPFRE,
                                 rootId
                         );
 
-        validarElementoDrive(
-                destinoFinal,
-                "La carpeta final del destinatario no pudo resolverse."
-        );
+        carpetas =
+                carpetas == null
+                        ? Collections.emptyList()
+                        : carpetas;
 
-        if (
-                destinoFinal.getMimeType() != null
-                        &&
-                        !MIME_TYPE_FOLDER.equals(
-                                destinoFinal.getMimeType()
-                        )
-        ) {
+        if (carpetas.isEmpty()) {
+            return null;
+        }
 
+        if (carpetas.size() > 1) {
             throw new IllegalStateException(
-                    "El destino final resuelto en Drive no es una carpeta."
+                    "Existe mas de una carpeta MAPFRE_HISTORICAL bajo la raiz Drive."
             );
         }
 
-        return destinoFinal;
+        File carpeta =
+                carpetas.get(0);
+
+        validarCarpetaGenerica(
+                carpeta,
+                "La carpeta MAPFRE_HISTORICAL es invalida."
+        );
+
+        return carpeta;
     }
 
     private File asegurarWebViewLink(
             File carpeta
     ) throws IOException {
 
-        validarElementoDrive(
+        validarCarpetaGenerica(
                 carpeta,
-                "La carpeta final del periodo es invalida."
+                "La carpeta MAPFRE Historical es invalida."
         );
 
         if (!campoVacio(carpeta.getWebViewLink())) {
@@ -321,15 +317,14 @@ public class CierreDriveLoteVidaService {
                                 carpeta.getId()
                         );
 
-        validarElementoDrive(
+        validarCarpetaGenerica(
                 completa,
-                "No se pudo recuperar la carpeta final desde Drive."
+                "No se pudo recuperar la carpeta MAPFRE Historical."
         );
 
         if (campoVacio(completa.getWebViewLink())) {
-
             throw new IllegalStateException(
-                    "La carpeta final no cuenta con webViewLink."
+                    "La carpeta MAPFRE Historical no cuenta con webViewLink."
             );
         }
 
@@ -354,87 +349,49 @@ public class CierreDriveLoteVidaService {
             String nombrePeriodo
     ) {
 
-        validarElementoDrive(
+        validarCarpetaGenerica(
                 carpeta,
-                "La carpeta del periodo no pudo resolverse."
+                "La carpeta MAPFRE del periodo es invalida."
         );
 
-        if (
-                !nombrePeriodo.equals(
-                        carpeta.getName()
-                )
-        ) {
-
+        if (!nombrePeriodo.equals(carpeta.getName())) {
             throw new IllegalStateException(
-                    "La carpeta Drive no corresponde al periodo esperado."
-            );
-        }
-
-        if (
-                carpeta.getMimeType() != null
-                        &&
-                        !MIME_TYPE_FOLDER.equals(
-                                carpeta.getMimeType()
-                        )
-        ) {
-
-            throw new IllegalStateException(
-                    "El elemento Drive del periodo no es una carpeta."
+                    "La carpeta Drive no corresponde al periodo MAPFRE esperado."
             );
         }
     }
 
-    private void validarElementoDrive(
-            File archivo,
+    private void validarCarpetaGenerica(
+            File carpeta,
             String mensaje
     ) {
 
         if (
-                archivo == null
-                        || campoVacio(
-                                archivo.getId()
+                carpeta == null
+                        || campoVacio(carpeta.getId())
+                        || (
+                                carpeta.getMimeType() != null
+                                        && !MIME_TYPE_FOLDER.equals(
+                                                carpeta.getMimeType()
+                                        )
                         )
         ) {
-
             throw new IllegalStateException(
                     mensaje
             );
         }
     }
 
-    private String resolverNombreCarpetaFinal(
-            String destino
-    ) {
-
-        if (DESTINO_MAPFRE.equals(destino)) {
-            return CARPETA_FINAL_MAPFRE;
-        }
-
-        return CARPETA_FINAL_PERSONAL;
-    }
-
-    private String resolverIdTpDoc(
-            String destino
-    ) {
-
-        if (DESTINO_MAPFRE.equals(destino)) {
-            return ID_TP_DOC_MAPFRE;
-        }
-
-        return ID_TP_DOC_PERSONAL;
-    }
-
     private String construirNombrePeriodo(
             LocalDate fechaInicio,
             LocalDate fechaFin
     ) {
-
         return fechaInicio
                 + "_"
                 + fechaFin;
     }
 
-    private String normalizarDestinatario(
+    private void validarMapfre(
             String destinatario
     ) {
 
@@ -443,25 +400,11 @@ public class CierreDriveLoteVidaService {
                 "El destinatario es obligatorio."
         );
 
-        String destino =
-                destinatario
-                        .trim()
-                        .toUpperCase(
-                                Locale.ROOT
-                        );
-
-        if (
-                !DESTINO_MAPFRE.equals(destino)
-                        &&
-                        !DESTINO_PERSONAL.equals(destino)
-        ) {
-
+        if (!DESTINO_MAPFRE.equalsIgnoreCase(destinatario.trim())) {
             throw new IllegalArgumentException(
-                    "El destinatario debe ser MAPFRE o PERSONAL."
+                    "CierreDriveLoteVidaService solo administra MAPFRE. PERSONAL usa Pending/Historical multidestino."
             );
         }
-
-        return destino;
     }
 
     private void validarPeriodo(
@@ -469,18 +412,13 @@ public class CierreDriveLoteVidaService {
             LocalDate fechaFin
     ) {
 
-        if (
-                fechaInicio == null
-                        || fechaFin == null
-        ) {
-
+        if (fechaInicio == null || fechaFin == null) {
             throw new IllegalArgumentException(
                     "El periodo es obligatorio."
             );
         }
 
         if (fechaInicio.isAfter(fechaFin)) {
-
             throw new IllegalArgumentException(
                     "La fecha inicial no puede ser posterior a la final."
             );
@@ -491,7 +429,6 @@ public class CierreDriveLoteVidaService {
             String valor,
             String mensaje
     ) {
-
         validarTexto(
                 valor,
                 mensaje
@@ -504,9 +441,7 @@ public class CierreDriveLoteVidaService {
             String valor,
             String mensaje
     ) {
-
         if (campoVacio(valor)) {
-
             throw new IllegalArgumentException(
                     mensaje
             );
@@ -516,7 +451,6 @@ public class CierreDriveLoteVidaService {
     private boolean campoVacio(
             String valor
     ) {
-
         return valor == null
                 || valor.trim().isEmpty();
     }

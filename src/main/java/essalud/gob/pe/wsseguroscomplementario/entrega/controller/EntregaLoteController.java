@@ -139,97 +139,11 @@ public class EntregaLoteController {
     }
 
     /*
-     * El OTP NO pertenece a este controller.
-     *
-     * Generación y validación se ejecutan desde Angular
-     * contra los servicios institucionales existentes.
-     */
-    /*
-     * La generacion y validacion del OTP continuan
-     * realizandose contra el servicio institucional.
-     *
-     * Este endpoint NO valida el OTP.
-     * Registra trazabilidad cuando Angular reporta
-     * una validacion institucional satisfactoria.
-     */
-    @PostMapping("/{token}/otp-validado")
-    public ResponseEntity<
-            ApiResponse<Boolean>>
-    registrarOtpValidado(
-            @PathVariable String token,
-            HttpServletRequest httpServletRequest
-    ) {
-
-        try {
-
-            String ipOrigen =
-                    obtenerIpOrigen(
-                            httpServletRequest
-                    );
-
-            String datosSesionDispositivo =
-                    obtenerDatosSesionDispositivo(
-                            httpServletRequest
-                    );
-
-            entregaLoteService
-                    .registrarOtpValidadoPorToken(
-                            token,
-                            ipOrigen,
-                            datosSesionDispositivo
-                    );
-
-            return ResponseEntity.ok(
-                    ApiResponse.exito(
-                            "Validacion OTP registrada correctamente.",
-                            Boolean.TRUE
-                    )
-            );
-
-        } catch (IllegalArgumentException e) {
-
-            return ResponseEntity
-                    .status(HttpStatus.NOT_FOUND)
-                    .body(
-                            ApiResponse.error(
-                                    "La entrega solicitada no existe o el enlace no es valido.",
-                                    null
-                            )
-                    );
-
-        } catch (EstadoEntregaException e) {
-
-            return ResponseEntity
-                    .status(HttpStatus.CONFLICT)
-                    .body(
-                            ApiResponse.error(
-                                    e.getMessage(),
-                                    null
-                            )
-                    );
-
-        } catch (IllegalStateException e) {
-
-            return ResponseEntity
-                    .status(
-                            HttpStatus.INTERNAL_SERVER_ERROR
-                    )
-                    .body(
-                            ApiResponse.error(
-                                    "No fue posible registrar la validacion OTP.",
-                                    null
-                            )
-                    );
-        }
-    }
-
-    /*
      * Angular llama a este endpoint solamente despues de
      * recibir completamente el Blob del ZIP.
      *
-     * Igual que OTP_VALIDADO, representa trazabilidad
-     * reportada por la aplicacion; no prueba que Windows
-     * haya guardado, abierto o leido fisicamente el archivo.
+     * Secuencia vigente:
+     * correo -> link -> descarga ZIP -> confirmacion -> Historical.
      */
     @PostMapping("/{token}/descarga-completada")
     public ResponseEntity<
@@ -333,8 +247,8 @@ public class EntregaLoteController {
             return ResponseEntity.ok(
                     ApiResponse.exito(
                             response.isYaRegistrado()
-                                    ? "La recepción ya se encontraba registrada."
-                                    : "Recepción registrada correctamente.",
+                                    ? "La recepciÃ³n ya se encontraba registrada."
+                                    : "RecepciÃ³n registrada correctamente.",
                             response
                     )
             );
@@ -345,7 +259,7 @@ public class EntregaLoteController {
                     .status(HttpStatus.NOT_FOUND)
                     .body(
                             ApiResponse.error(
-                                    "La entrega solicitada no existe o el enlace no es válido.",
+                                    "La entrega solicitada no existe o el enlace no es vÃ¡lido.",
                                     null
                             )
                     );
@@ -369,7 +283,7 @@ public class EntregaLoteController {
                     )
                     .body(
                             ApiResponse.error(
-                                    "No fue posible registrar la recepción del lote.",
+                                    "No fue posible registrar la recepciÃ³n del lote.",
                                     null
                             )
                     );
@@ -384,7 +298,7 @@ public class EntregaLoteController {
                 .status(HttpStatus.NOT_FOUND)
                 .body(
                         ApiResponse.error(
-                                "La entrega solicitada no existe o el enlace no es válido.",
+                                "La entrega solicitada no existe o el enlace no es vÃ¡lido.",
                                 null
                         )
                 );
