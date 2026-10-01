@@ -27,7 +27,7 @@ public class JobLotePersonalVida {
     private final ProcesoLotePersonalVidaService proceso;
 
     @Scheduled(
-            cron = "20 15 13 22 9 *",
+            cron = "${integraciones.lotes-vida.personal.cron:20 15 13 4,19 * *}",
             zone = "America/Lima"
     )
     public void ejecutar() {
@@ -35,7 +35,7 @@ public class JobLotePersonalVida {
         Periodo periodo =
                 calendario
                         .obtenerPeriodoPersonal(
-                                LocalDate.of(2026, 10, 4)
+                                LocalDate.now(ZONA_LIMA)
                         );
 
         proceso.procesar(

@@ -215,9 +215,7 @@ public class DistribuidorPersonalDriveService {
             );
         }
 
-        return destino.codigoDestino()
-                + " - "
-                + destino.nombreDestino();
+        return destino.codigoDestino();
     }
     private void validarArchivoCopia(
             File archivo

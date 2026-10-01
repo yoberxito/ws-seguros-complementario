@@ -142,8 +142,14 @@ public class ProcesoLotePersonalVidaService {
                         resultado.getCierre().getPreparacionEntrega().getEntrega().getIdEntrega(),
                         resultado.getCierre().isTokenGenerado()
                 );
+                if (resultado.getTokenPublico() == null
+                        || resultado.getTokenPublico().isBlank()) {
+                    log.info("PERSONAL sin token disponible para notificar. codigoDestino={}",
+                            resultado.getDestino().codigoDestino());
+                    continue;
+                }
                 notificacionSegurosComplementarios.senEmailPersonal(
-                        "gctic.sgsass22@essalud.gob.pe",DESTINO_PERSONAL,periodo,resultado
+                        resolvedorCorreo.resolverCorreo(resultado.getDestino()),DESTINO_PERSONAL,periodo,resultado
                 );
 
             }

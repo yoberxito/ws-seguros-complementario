@@ -67,6 +67,11 @@ public class PlanificadorDistribucionPersonalDriveService {
                 );
             }
 
+            String tipoDocumento = requerir(
+                    documento.getTipoDocumentoTitular(),
+                    "Existe un documento PERSONAL sin tipo de documento."
+            );
+
             String dni =
                     requerir(
                             documento.getNumeroDocumentoTitular(),
@@ -78,7 +83,7 @@ public class PlanificadorDistribucionPersonalDriveService {
              * Se valida nuevamente porque este servicio
              * tambien puede utilizarse aisladamente.
              */
-            if (!trabajadoresProcesados.add(dni)) {
+            if (!trabajadoresProcesados.add(tipoDocumento + "|" + dni)) {
 
                 throw new IllegalStateException(
                         "Existe mas de un documento PERSONAL para el DNI "
@@ -88,9 +93,7 @@ public class PlanificadorDistribucionPersonalDriveService {
             }
 
             DestinoPersonalVida destino =
-                    resolvedor.resolverPorDni(
-                            dni
-                    );
+                    resolvedor.resolverPorDocumento(tipoDocumento, dni);
 
             if (destino == null) {
 

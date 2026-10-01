@@ -17,4 +17,9 @@ public interface ResolvedorDestinoPersonalVida {
     DestinoPersonalVida resolverPorDni(
             String dni
     );
+    default DestinoPersonalVida resolverPorDocumento(
+            String tipoDocumento, String numeroDocumento
+    ) {
+        return resolverPorDni(numeroDocumento);
+    }
 }
