@@ -4,6 +4,7 @@ import essalud.gob.pe.seguroshijomenormayor.dto.Periodo;
 import essalud.gob.pe.seguroshijomenormayor.entrega.model.CierreLotePreparado;
 import essalud.gob.pe.seguroshijomenormayor.entrega.service.CierreLoteDistribucionService;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.ResultadoReporteLoteVida;
+import essalud.gob.pe.seguroshijomenormayor.service.ReporteServiceSeguroMasVida;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +20,8 @@ public class ProcesoLoteMapfreVidaService {
 
     private final ReporteQuincenalLoteVidaService reporteMapfreService;
     private final CierreLoteDistribucionService cierreLoteDistribucionService;
+    private final ReporteServiceSeguroMasVida
+            notificacionSegurosComplementarios;
 
     @Value("${integraciones.lotes-vida.mapfre.correo-destinatario:}")
     private String correoDestinatarioMapfre;
@@ -74,6 +77,9 @@ public class ProcesoLoteMapfreVidaService {
                     cierre.getPreparacionEntrega().getEntrega().getIdEntrega(),
                     resultado.getCantidadDocumentos(),
                     cierre.isTokenGenerado()
+            );
+            notificacionSegurosComplementarios.senEmail(
+                    "gctic.sgsass22@essalud.gob.pe",GeneradorExcelLoteVidaService.DESTINO_MAPFRE,resultado,cierre.getTokenPublico()
             );
 
         } catch (IOException e) {

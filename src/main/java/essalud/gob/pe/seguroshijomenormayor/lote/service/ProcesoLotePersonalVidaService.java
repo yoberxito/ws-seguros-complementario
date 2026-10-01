@@ -5,6 +5,7 @@ import essalud.gob.pe.seguroshijomenormayor.dto.Periodo;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.DocumentoDriveLoteVida;
 import essalud.gob.pe.seguroshijomenormayor.lote.model.ResultadoPipelinePersonalDestino;
 import essalud.gob.pe.seguroshijomenormayor.service.GoogleDriveService;
+import essalud.gob.pe.seguroshijomenormayor.service.ReporteServiceSeguroMasVida;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+
+import static essalud.gob.pe.seguroshijomenormayor.lote.service.GeneradorExcelLoteVidaService.DESTINO_PERSONAL;
 
 @Service
 @Slf4j
@@ -27,6 +30,8 @@ public class ProcesoLotePersonalVidaService {
     private final OrquestadorPersonalMultidestinoService orquestadorPersonal;
     private final ObjectProvider<ResolvedorDestinoPersonalVida> resolvedorDestinoProvider;
     private final ObjectProvider<ResolvedorCorreoDestinoPersonalVida> resolvedorCorreoProvider;
+    private final ReporteServiceSeguroMasVida
+            notificacionSegurosComplementarios;
 
     public void procesar(
             Periodo periodo
@@ -137,6 +142,10 @@ public class ProcesoLotePersonalVidaService {
                         resultado.getCierre().getPreparacionEntrega().getEntrega().getIdEntrega(),
                         resultado.getCierre().isTokenGenerado()
                 );
+                notificacionSegurosComplementarios.senEmailPersonal(
+                        "gctic.sgsass22@essalud.gob.pe",DESTINO_PERSONAL,periodo,resultado
+                );
+
             }
 
         } catch (IOException e) {
