@@ -177,8 +177,8 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         7.8f,
-                        86,
-                        618,
+                        110,
+                        628,
                         request.getNombresApellidosTrabajador(),
                         215
                 );
@@ -188,9 +188,12 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         8.5f,
-                        430,
-                        618,
-                        request.getNumeroDocumentoTrabajador()
+                        455,
+                        628,
+                        formatearNumeroDocumentoParaPdf(
+                                request.getTipoDocumentoTrabajador(),
+                                request.getNumeroDocumentoTrabajador()
+                        )
                 );
 
 // código de planilla __________________
@@ -198,8 +201,8 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         8.5f,
-                        178,
-                        604,
+                        210,
+                        614,
                         request.getCodigoPlanilla()
                 );
 
@@ -208,8 +211,8 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         8.5f,
-                        437,
-                        604,
+                        501,
+                        614,
                         request.getDecretoLegislativo()
                 );
 
@@ -218,8 +221,8 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         8.5f,
-                        275,
-                        551,
+                        280,
+                        548,
                         String.valueOf(fechaDocumento.getDayOfMonth())
                 );
 
@@ -227,8 +230,8 @@ public class GeneracionAutorizacionDescuentoService {
                         contenido,
                         fuenteNormal,
                         8.5f,
-                        400,
-                        551,
+                        385,
+                        548,
                         obtenerNombreMes(fechaDocumento)
                 );
 
@@ -388,6 +391,32 @@ public class GeneracionAutorizacionDescuentoService {
         if (campoVacio(request.getDecretoLegislativo())) {
             throw new IllegalArgumentException("El Decreto Legislativo es obligatorio.");
         }
+    }
+
+    private String formatearNumeroDocumentoParaPdf(
+            String tipoDocumento,
+            String numeroDocumento
+    ){
+        if (numeroDocumento == null){
+            return "";
+        }
+
+        String tipo = tipoDocumento == null ? "": tipoDocumento.trim();
+        boolean esCe = "04".equals(tipo)
+                || "CE".equalsIgnoreCase(tipo)
+                || "C.E.".equalsIgnoreCase(tipo);
+
+        if (!esCe){
+            return numeroDocumento;
+        }
+        String numero = numeroDocumento.trim();
+        int longitudCe = 9;
+
+        if (!numero.matches("[0-9]+") || numero.length() >= longitudCe){
+            return numeroDocumento;
+        }
+
+        return "0".repeat(longitudCe - numero.length()) + numero;
     }
 
     private void escribirTexto(

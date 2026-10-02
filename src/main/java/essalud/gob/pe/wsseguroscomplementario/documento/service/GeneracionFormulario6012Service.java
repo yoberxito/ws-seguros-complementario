@@ -308,7 +308,10 @@ public class GeneracionFormulario6012Service {
                 8.5f,
                 423,
                 702,
-                request.getNumeroDocumentoTitular()
+                formatearNumeroDocumentoParaPdf(
+                        request.getTipoDocumentoTitular(),
+                        request.getNumeroDocumentoTitular()
+                )
         );
 
         escribirTextoAjustado(
@@ -366,7 +369,10 @@ public class GeneracionFormulario6012Service {
                 8.5f,
                 423,
                 470,
-                request.getNumeroDocumentoConyuge()
+                formatearNumeroDocumentoParaPdf(
+                        request.getTipoDocumentoConyuge(),
+                        request.getNumeroDocumentoConyuge()
+                )
         );
 
         escribirTextoAjustado(
@@ -407,7 +413,12 @@ public class GeneracionFormulario6012Service {
                     7.4f,
                     120,
                     y,
-                    valor(beneficiario.getNumeroDocumento())
+                    valor(
+                            formatearNumeroDocumentoParaPdf(
+                                    beneficiario.getTipoDocumento(),
+                                    beneficiario.getNumeroDocumento()
+                            )
+                    )
             );
 
             escribirTextoAjustado(
@@ -629,6 +640,34 @@ public class GeneracionFormulario6012Service {
         if (sumaPorcentajes.compareTo(new BigDecimal("100")) != 0) {
             throw new IllegalArgumentException("La suma de porcentajes de beneficiarios debe ser igual a 100%.");
         }
+    }
+
+    private String formatearNumeroDocumentoParaPdf(
+            String tipoDocumento,
+            String numeroDocumento
+    ) {
+        if (numeroDocumento == null) {
+            return "";
+        }
+
+        String tipo = tipoDocumento == null ? "" : tipoDocumento.trim();
+
+        boolean esCe = "04".equals(tipo)
+                || "CE".equalsIgnoreCase(tipo)
+                || "C.E.".equalsIgnoreCase(tipo);
+
+        if (!esCe) {
+            return numeroDocumento;
+        }
+
+        String numero = numeroDocumento.trim();
+        int longitudCe = 9;
+
+        if (!numero.matches("[0-9]+") || numero.length() >= longitudCe) {
+            return numeroDocumento;
+        }
+
+        return "0".repeat(longitudCe - numero.length()) + numero;
     }
 
     private void escribirTexto(
